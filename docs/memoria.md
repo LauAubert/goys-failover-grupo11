@@ -24,6 +24,15 @@
 
 Partimos del diagrama "Enterprise Network Design (Cisco)" que vimos en clase y de los defectos que le encontramos (`analisis.md`). Estos son los que corregimos en nuestro diseño:
 
+| # | Defecto detectado | Corrección aplicada | Justificación |
+|:-:|-------------------|---------------------|---------------|
+| 1 | Hay un solo firewall. Si se rompe, toda la empresa se queda sin Internet, aunque tenga dos proveedores. | En el lab no armamos un firewall aparte (las reglas de filtrado van en el router EDGE). Dejamos documentado que en una red real tienen que ir dos firewalls, uno activo y otro de respaldo. | De nada sirve tener dos ISPs si todo el tráfico pasa por un único equipo que puede fallar. Lo que está en el camino crítico tiene que estar duplicado. |
+| 2 | Hay redes repetidas: la misma dirección (192.168.10.0/24) aparece en dos sitios distintos. | Armamos un plan de direcciones donde cada enlace y cada red tiene un rango propio que no se repite (sección 1.2). | Si dos redes tienen la misma dirección, los routers no pueden distinguirlas y una de las dos queda inalcanzable. Por eso el plan de IPs se define antes de configurar nada. |
+| 3 | Los dos routers del core (CORE-1 y CORE-2) no están conectados entre sí. | Agregamos el cable CORE-1 ↔ CORE-2. | Si se corta el enlace entre el EDGE y CORE-1, CORE-1 queda sin salida. Con el cable core–core puede seguir mandando el tráfico por CORE-2. Es lo que hace que OSPF pueda recalcular la ruta en el drill 2. |
+| 4 | La puerta de enlace de las PCs (HSRP) está en el core, que debería ser solo un "pasillo" de tránsito. Además HSRP es propietario de Cisco. | Movemos la puerta de enlace redundante a los routers de distribución (DIST-1 y DIST-2) y usamos VRRP, que es el estándar abierto. El core queda solo con OSPF. | En una red jerárquica cada capa hace una cosa: distribución es la puerta de enlace de las PCs, el core solo mueve tráfico rápido. Mezclar las dos cosas complica el core. Y usamos VRRP porque funciona con cualquier marca (nuestros routers son MikroTik, no Cisco). |
+| 5 | El diagrama pone un Route Reflector de iBGP cruzando el firewall, algo que no corresponde y que a esta escala no hace falta. | El router EDGE habla eBGP directamente con los dos ISPs. Sin Route Reflector. | Un Route Reflector sirve cuando hay muchos routers BGP internos. Nosotros tenemos uno solo (el EDGE), así que agregarlo es sumar algo que puede fallar sin ningún beneficio. |
+
+Otros problemas que tiene el diagrama y que quedan fuera del alcance del lab (voz sin QoS, falta de VLAN de gestión y de protecciones en los switches): los dejamos anotados pero no los implementamos.
 
 ### 1.2 Plan de direccionamiento (IPAM)
 
@@ -89,6 +98,47 @@ Partimos del diagrama "Enterprise Network Design (Cisco)" que vimos en clase y d
 
 ### 1.3 Política de seguridad
 
+**Usuarios y privilegios (idéntico en los 7 routers):**
+
+| Usuario | Grupo RouterOS | Permisos | Uso |
+|---------|----------------|----------|-----|
+| `admin` | `full` | Lectura, escritura, reboot, políticas | Único usuario con permiso de cambio. Contraseña fuerte (≥ 14 caracteres, mayúsculas, minúsculas, números y símbolos), distinta de la de fábrica (CHR viene sin password). |
+| `monitor` | `read` | Solo lectura | Usado para verificaciones, drills y monitoreo. **No puede modificar nada**. Es el usuario con el que R5 ejecuta los chequeos. |
+
+- Se elimina cualquier otro usuario por defecto. No se crean usuarios personales adicionales: la trazabilidad de **quién** cambió **qué** se obtiene del change log + los commits de git firmados por cada rol, no de usuarios locales.
+- Login remoto solo con `admin` para cambios aprobados en el change log, y con `monitor` para todo lo demás.
+
+**Servicios que se deshabilitan (`/ip service`):**
+
+| Servicio | Estado | Motivo |
+|----------|:------:|--------|
+| `telnet` | **disabled** | Texto plano, credenciales visibles en la red |
+| `ftp` | **disabled** | Texto plano; los backups se extraen por SSH/SCP |
+| `www` (HTTP) | **disabled** | Texto plano |
+| `api`, `api-ssl` | **disabled** | No se usa automatización por API en este lab |
+| `www-ssl` | **disabled** | No se usa WebFig |
+| `ssh` (22) | habilitado | Gestión por CLI. Restringido con `address=` a las redes de gestión (loopbacks `10.255.255.0/24` y LAN SERVERS `10.20.0.0/24`). |
+| `winbox` (8291) | habilitado | Gestión GUI. Misma restricción de `address=`. |
+
+Además: `/tool mac-server set allowed-interface-list=none`, `/tool mac-server mac-winbox set allowed-interface-list=none`, `/ip neighbor discovery-settings set discover-interface-list=none` en las interfaces hacia los ISP, `/tool bandwidth-server set enabled=no`, y `/ip dns` sin `allow-remote-requests`.
+
+**Claves de autenticación del plano de control (claves de laboratorio):**
+
+| Protocolo | Mecanismo | Clave | Dónde |
+|-----------|-----------|-------|-------|
+| OSPF | MD5, key-id 1 | `G0ys-0spf-2026` | Todas las interfaces OSPF activas (EDGE↔CORE, CORE↔CORE, CORE↔DIST) |
+| BGP (ISP-1) | TCP-MD5 | `G0ys-Bgp-Isp1` | Sesión EDGE ↔ ISP-1, configurada en ambos extremos |
+| BGP (ISP-2) | TCP-MD5 | `G0ys-Bgp-Isp2` | Sesión EDGE ↔ ISP-2, configurada en ambos extremos |
+| VRRP grupo 10 | simple (máx. 8 caracteres en RouterOS) | `Vrrp10Us` | DIST-1 y DIST-2, interfaz hacia USERS |
+| VRRP grupo 20 | simple | `Vrrp20Sv` | DIST-1 y DIST-2, interfaz hacia SERVERS |
+
+- Claves **distintas por protocolo y por sesión BGP**, para que comprometer una no comprometa las otras.
+- La prueba obligatoria de F4 (adyacencia/sesión con clave incorrecta **debe fallar**) se ejecuta cambiando una sola de estas claves en un extremo.
+- Son claves de laboratorio; en producción se gestionarían en un gestor de secretos y no se versionarían en el repo.
+
+**Firewall en el EDGE (se implementa en F3, se define aquí):**
+- `input`: aceptar `established,related`; aceptar SSH/Winbox solo desde redes de gestión; aceptar BGP (TCP/179) solo desde las IPs de los ISP; aceptar OSPF (proto 89) solo desde las redes de enlace internas; aceptar ICMP limitado; **drop** el resto.
+- `forward`: aceptar `established,related` y tráfico saliente desde las LAN; drop de conexiones nuevas entrantes desde los ISP hacia las LAN.
 
 ### 1.4 Política de operación
 
