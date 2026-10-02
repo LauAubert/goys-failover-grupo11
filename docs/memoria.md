@@ -73,6 +73,12 @@ Otros problemas que tiene el diagrama y que quedan fuera del alcance del lab (vo
 
 **VRRP (load-sharing entre grupos):**
 
+| Grupo | VRID | Master | Backup | Priority (master / backup) | IP virtual | Auth |
+|-------|:----:|:------:|:------:|:--------------------------:|:----------:|------|
+| USERS (`10.10.0.0/24`) | **10** | DIST-1 | DIST-2 | 200 / 100 | `10.10.0.1/32` | simple, ver 1.3 |
+| SERVERS (`10.20.0.0/24`) | **20** | DIST-2 | DIST-1 | 200 / 100 | `10.20.0.1/32` | simple, ver 1.3 |
+
+> Con DIST-1 master del grupo 10 y DIST-2 master del grupo 20, **ambos routers trabajan en simultáneo** (drill 5) y cada uno respalda al otro (drill 1).
 
 **Loopbacks / Router-IDs:**
 
