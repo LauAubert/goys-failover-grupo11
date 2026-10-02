@@ -323,11 +323,11 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 | Fecha | Responsable | Cambio | Motivo | Cómo se revierte |
 |-------|-------------|--------|--------|------------------|
-| `<fecha>` | R5 — Lautaro Aubert | `<hash>` `chore(repo): estructura inicial del repositorio` | Epic F0 — Repositorio git | `git revert <hash>` |
-| `<fecha>` | R1 — Santiago Natalichio Bestosini | `<hash>` `docs(ipam): plan de direccionamiento, política de operación y diagrama lógico` | Epic F0 — IPAM y política de operación | `git revert <hash>` |
-| `<fecha>` | R2/R3 — Tomás Martin | `<hash>` `docs(diseno): corrección del diagrama viral y política de seguridad` | Epic F0 — Corrección del diagrama y política de seguridad | `git revert <hash>` |
-| `<fecha>` | R4 — Juan Bautista Cuenca | `<hash>` `docs(ipam): grupos VRRP con load-sharing` | Epic F0 — IPAM (grupos VRRP) | `git revert <hash>` |
-| `<fecha>` | R5 — Lautaro Aubert | `<hash>` `docs(operacion): backlog inicial con F0` | Epic F0 — Repositorio git (backlog) | `git revert <hash>` |
+| `2026-10-02` | R5 — Lautaro Aubert | `bc8e884` `chore(repo): estructura inicial del repositorio` | Epic F0 — Repositorio git | `git revert bc8e884` |
+| `2026-10-02` | R1 — Santiago Natalichio Bestosini | `99a4d27` `docs(ipam): plan de direccionamiento, política de operación y diagrama lógico` | Epic F0 — IPAM y política de operación | `git revert 99a4d27` |
+| `2026-10-02` | R2/R3 — Tomás Martin | `7dc34ad` `docs(diseno): corrección del diagrama y política de seguridad` | Epic F0 — Corrección del diagrama y política de seguridad | `git revert 7dc34ad` |
+| `2026-10-02` | R4 — Juan Bautista Cuenca | `ba3fc2d` `docs(ipam): grupos VRRP con load-sharing` | Epic F0 — IPAM (grupos VRRP) | `git revert ba3fc2d` |
+| `2026-10-02` | R5 — Lautaro Aubert | `0186c8d` `docs(operacion): backlog inicial con F0` | Epic F0 — Repositorio git (backlog) | `git revert 0186c8d` |
 
 > Esta tabla se completa con el commit `ops(changelog): registro de commits F0` (R5), que por eso no aparece en ella: un commit no puede contener su propio hash.
 
