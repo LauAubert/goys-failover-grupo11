@@ -206,12 +206,27 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 ## 2. Topología
 
-> Pegar acá la captura del proyecto GNS3 con las 5 capas identificadas (F1). Diagrama lógico de diseño en `docs/diagramas/topologia.md`.
+Proyecto GNS3 `Failover-G11`, armado por el grupo desde cero en GNS3 2.2.61 con la imagen MikroTik CHR 7.21.5 (256 MB de RAM y 4 interfaces por router). Diagrama lógico de diseño en `docs/diagramas/topologia.md`.
 
-```
-[INTERNET] [EDGE] [CORE] [DISTRIBUTION] [ACCESS]
-<!-- insertar diagrama/captura en F1 -->
-```
+![Topología del proyecto GNS3](../capturas/F1/01-topologia.png)
+
+| Capa | Nodos |
+|------|-------|
+| INTERNET | ISP-1, ISP-2 |
+| EDGE | EDGE |
+| CORE | CORE-1, CORE-2 |
+| DISTRIBUTION | DIST-1, DIST-2 |
+| ACCESS | SW-USERS, SW-SERVERS (Ethernet switch de GNS3), PC-USER, SRV (VPCS) |
+
+- **11 nodos y 15 enlaces**, cableados según la tabla de 1.2. GNS3 rotula las interfaces de los CHR como `Ethernet0`…`Ethernet3` (`e0`…`e3` en la captura); equivalen a `ether1`…`ether4` de RouterOS.
+- **La numeración `etherN` de 1.2 se contrastó con el proyecto y no hubo diferencias**: la tabla IPAM queda sin cambios.
+- Los hosts son VPCS porque el GNS3 usado corre con servidor local, sin la GNS3 VM que necesitan los contenedores.
+
+**Incidente: orden de las interfaces en los CHR.** En el primer arranque de un nodo, RouterOS nombra las interfaces según el orden en que detecta las placas, y en esta plataforma ese orden no siempre coincide con el de los adaptadores de GNS3. En ISP-1 la placa del primer adaptador (MAC terminada en `00:00`) quedó como `ether4`: la dirección se había cargado en `ether1`, un puerto sin cable, y el ping hacia EDGE no respondía (ARP en estado `failed`). Se detectó comparando las MAC en `/interface print`. A partir de ahí se agregó un chequeo previo a configurar cada router (`/interface print`: las MAC deben ir en orden, de `00:00` en `ether1` a `00:03` en `ether4`), que encontró el mismo problema en CORE-2 y en DIST-2 antes de cargarles nada. Los tres nodos se recrearon y se recablearon; los 7 routers quedaron con las interfaces en orden (capturas `*-interfaces.png`). El mismo efecto volvió a aparecer en un `/export` y en el restore (ver 6.2).
+
+**Snapshot `BASE`.** Tomado el 2026-10-10 a las 17:22, con todos los nodos apagados y después de verificar conectividad y hardening. Queda en la máquina donde corre el laboratorio (no se versiona por tamaño). Al volver a prender los nodos se repitieron los ping desde EDGE y DIST-1 (capturas `13-*-ping-post-snapshot.png`): la configuración sobrevive al apagado.
+
+![Snapshot BASE en GNS3](../capturas/F1/12-snapshot-BASE.png)
 
 ---
 
@@ -256,7 +271,15 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 ### 3.8 Hosts (PC-USER / SRV)
 ```bash
-<!-- config final de los hosts -->
+# Los hosts son VPCS de GNS3. El gateway .1 es la IP virtual de VRRP: existe a partir de F2.
+
+# PC-USER
+ip 10.10.0.100/24 10.10.0.1
+save
+
+# SRV
+ip 10.20.0.100/24 10.20.0.1
+save
 ```
 
 ---
@@ -267,6 +290,7 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 | Prueba | Comando | Resultado |
 |--------|---------|-----------|
+| ping entre vecinos directos (F1) | `/ping <IP del vecino> count=4` desde cada router, por cada enlace; `ping` desde PC-USER y SRV a DIST-1 y DIST-2 | Responden los 15 enlaces, en los dos sentidos. Capturas `*-ping-*.png` en `capturas/F1/`. En F1 todavía no hay ruteo entre nodos que no son vecinos (llega con OSPF y BGP) |
 | ping intra-LAN (PC-USER ↔ SRV) | <!-- --> | <!-- --> |
 | traceroute a ISP (loopback) | <!-- --> | <!-- --> |
 
@@ -316,7 +340,7 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 | Mecanismo | Dónde se aplicó | Verificación (¿cómo probaron que funciona?) |
 |-----------|-----------------|---------------------------------------------|
-| Hardening (usuarios/servicios) | <!-- --> | <!-- --> |
+| Hardening (usuarios/servicios) | Los 7 routers (F1): clave de `admin`, usuario `monitor` (grupo `read`), servicios `telnet`, `ftp`, `www`, `www-ssl`, `api` y `api-ssl` deshabilitados, `ssh` y `winbox` restringidos a las redes de gestión, MAC server, descubrimiento de vecinos y bandwidth-server apagados, cliente DHCP de fábrica eliminado | En cada router: `/user print` (solo `admin` y `monitor`), `/ip service print` (servicios con `X`, y `address` restringido en `ssh` y `winbox`) e `/ip dhcp-client print` vacío. Capturas `*-hardening.png` y `*-sin-dhcp-client.png` en `capturas/F1/`; los `.rsc` de `configs/` lo reflejan |
 | OSPF MD5 | <!-- --> | <!-- --> |
 | BGP TCP-MD5 | <!-- --> | <!-- --> |
 | VRRP auth | <!-- --> | <!-- --> |
@@ -345,7 +369,34 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 > Evidencia de backup (`/export` + `/system backup save`) y de **restore probado**. (F1 en adelante)
 
-<!-- pegar evidencia -->
+**Backup post-F1 (2026-10-10):**
+
+| Qué | Cómo | Dónde |
+|-----|------|-------|
+| Export en texto de los 7 routers | `/export` en cada router, con el snapshot `BASE` ya tomado | `backups/2026-10-10/<ROUTER>.rsc` y, como configuración vigente, `configs/<ROUTER>.rsc` |
+| Backup binario de los 7 routers | `/system backup save name=<ROUTER>-20261010-F1` | Dentro de cada router (capturas `15-*-backup-binario.png`). No se versiona: incluye usuarios y contraseñas |
+| Snapshot GNS3 | `BASE` (ver sección 2) | Máquina donde corre el laboratorio |
+
+- Los `.rsc` se revisaron antes de commitear: no contienen contraseñas ni claves, y no incluyen el cliente DHCP de fábrica.
+- Antes de dar por bueno un export se mira la sección `/interface ethernet`: si alguna línea trae `name=`, el router detectó las placas en otro orden en ese arranque (ver el incidente de la sección 2) y ese `.rsc` no se puede importar en un router recién reseteado. Pasó con DIST-2 (captura `14-DIST-2-interfaces-nombre-de-fabrica.png`): el router funcionaba, pero se reinició el nodo y se volvió a exportar para tener un backup importable.
+
+**Restore probado (F1): ISP-2, 2026-10-10.** Se eligió ISP-2 porque tiene un solo enlace. Procedimiento base, según la política de 1.4:
+
+1. `/export file=ISP-2-20261010-postF1`, que deja el `.rsc` dentro del router.
+2. `/system reset-configuration no-defaults=yes skip-backup=yes`. Borra la configuración; los archivos del router se conservan.
+3. `/import file-name=ISP-2-20261010-postF1.rsc`.
+4. Volver a cargar la clave de `admin` y el usuario `monitor`, porque el export no trae usuarios ni contraseñas.
+5. Verificar con ping al vecino y comparar el `/export` con el backup.
+
+*Intento 1: no pasó.* Después del reset `/ip address print` salió vacío y el import respondió `Script file loaded and executed successfully`, pero el ping hacia EDGE dio `no route to host`. Causa: tras el reset, RouterOS volvió a nombrar las placas y la del cable hacia EDGE (MAC `…00:00`) quedó como `ether4`, así que la dirección se cargó en un puerto sin cable (capturas `16-restore-intento-1-*.png`). Además, el reset volvió a crear el cliente DHCP de fábrica en `ether1`, aunque se usó `no-defaults=yes`. El texto de la configuración estaba restaurado, pero el router no tenía conectividad.
+
+*Intento 2: pasó.* Un segundo reset dejó las placas en el mismo orden, así que se agregó un paso antes de importar: fijar los nombres por MAC (`/interface ethernet set [find mac-address=<MAC>] name=<nombre>`, pasando por nombres temporales). Después se importó el `.rsc`, se quitó el cliente DHCP (`/ip dhcp-client remove [find]`) y se recrearon los usuarios (tras el reset, `admin` figuraba como `E - expired`, sin contraseña). Resultado (capturas `17-restore-intento-2-*.png`):
+
+- `ether1` con la MAC `…00:00` y con enlace; usuarios y servicios igual que antes del reset.
+- Ping ISP-2 → EDGE y EDGE → ISP-2: 4 de 4.
+- El `/export` posterior, tomado después de reiniciar el nodo, es **idéntico a `backups/2026-10-10/ISP-2.rsc`** salvo la hora del encabezado (comparado con `diff`).
+
+Procedimiento de restore que queda para esta plataforma: reset → verificar el orden de las placas por MAC y corregirlo si hace falta → import → quitar el cliente DHCP → recrear usuarios → ping al vecino → export y comparación. Un restore no se da por probado hasta que el ping responde: en el intento 1 la configuración coincidía y el router estaba aislado.
 
 ### 6.3 Monitoreo
 
@@ -359,7 +410,17 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 
 > Listar o enlazar la carpeta de capturas (drills, tablas, failover).
 
-<!-- -->
+**F1: `capturas/F1/`**
+
+| Archivos | Contenido |
+|----------|-----------|
+| `01-topologia.png` | Proyecto GNS3 con los 11 nodos y los 15 enlaces |
+| `02-…` a `09-…` (un prefijo por router) | Por router: direcciones y hardening (`-ips-hardening`, `-hardening`, `-ips`), orden de interfaces (`-interfaces`), ping a los vecinos directos (`-ping-…`) y baja del cliente DHCP (`-sin-dhcp-client`) |
+| `10-PC-USER-ip-ping.png`, `11-SRV-ip-ping.png` | IP, gateway y ping de los hosts a DIST-1 y DIST-2 |
+| `12-snapshot-BASE.png`, `13-*-ping-post-snapshot.png` | Snapshot `BASE` y ping después de volver a prender los nodos |
+| `14-DIST-2-*.png` | Export de DIST-2 con las interfaces en otro orden, y ping después del reinicio |
+| `15-*-backup-binario.png` | Backup binario dentro de cada router (`/file print`) |
+| `16-restore-intento-1-*.png`, `17-restore-intento-2-*.png` | Restore probado en ISP-2: intento fallido e intento correcto |
 
 ---
 
@@ -390,14 +451,14 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 - [x] Política de operación definida (change log + backup)
 
 ### Redes
-- [ ] 7 CHR + 2 switches + 2 hosts levantados y cableados
+- [x] 7 CHR + 2 switches + 2 hosts levantados y cableados
 - [ ] VRRP operativo (2 grupos, load-sharing)
 - [ ] OSPF área 0 con adyacencias (incluido core–core)
 - [ ] BGP eBGP ×2 establecido (multi-homing)
 - [ ] Los 5 drills ejecutados y documentados (runbook + post-mortem + tiempo)
 
 ### Seguridad
-- [ ] Hardening aplicado (password, usuario mínimo, servicios apagados)
+- [x] Hardening aplicado (password, usuario mínimo, servicios apagados)
 - [ ] OSPF MD5 funcionando
 - [ ] BGP TCP-MD5 funcionando
 - [ ] VRRP auth funcionando
