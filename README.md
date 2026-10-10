@@ -33,8 +33,8 @@ monitoreo, runbooks y 5 drills de failover).
 
 | Fase | Contenido | Vence | Estado |
 |:----:|-----------|:-----:|--------|
-| F0 | Diseño + políticas + repo | vie 2/10 | 🟡 entregado, esperando aprobación |
-| F1 | Topología + hardening + backup | vie 9/10 | ⚪ pendiente |
+| F0 | Diseño + políticas + repo | vie 2/10 | 🟢 aprobado (100/100) |
+| F1 | Topología + hardening + backup | vie 9/10 | 🟡 entregado, esperando devolución |
 | F2 | VRRP + OSPF | vie 16/10 | ⚪ pendiente |
 | F3 | BGP + firewall | vie 16/10 | ⚪ pendiente |
 | F4 | Drills + monitoreo | mar 20/10 | ⚪ pendiente |
