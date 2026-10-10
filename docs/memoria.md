@@ -128,6 +128,8 @@ Otros problemas que tiene el diagrama y que quedan fuera del alcance del lab (vo
 
 Además: `/tool mac-server set allowed-interface-list=none`, `/tool mac-server mac-winbox set allowed-interface-list=none`, `/ip neighbor discovery-settings set discover-interface-list=none` en las interfaces hacia los ISP, `/tool bandwidth-server set enabled=no`, y `/ip dns` sin `allow-remote-requests`.
 
+**Cliente DHCP de fábrica (agregado en F1):** el CHR trae de fábrica un cliente DHCP en `ether1` con `add-default-route=yes`. Se elimina en los 7 routers con `/ip dhcp-client remove [find]`: el diseño usa solo direcciones estáticas, y ese cliente aceptaría una dirección y una ruta por defecto de cualquier servidor DHCP que le respondiera (en el EDGE, `ether1` es el enlace hacia ISP-1). Como `/system reset-configuration` lo vuelve a crear, también se quita después de cada restore (ver 6.2).
+
 **Claves de autenticación del plano de control:**
 
 | Protocolo | Mecanismo | Clave | Dónde |
