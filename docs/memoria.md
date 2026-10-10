@@ -361,8 +361,17 @@ save
 | `2026-10-02` | R2/R3 — Tomás Martin | `7dc34ad` `docs(diseno): corrección del diagrama y política de seguridad` | Epic F0 — Corrección del diagrama y política de seguridad | `git revert 7dc34ad` |
 | `2026-10-02` | R4 — Juan Bautista Cuenca | `ba3fc2d` `docs(ipam): grupos VRRP con load-sharing` | Epic F0 — IPAM (grupos VRRP) | `git revert ba3fc2d` |
 | `2026-10-02` | R5 — Lautaro Aubert | `0186c8d` `docs(operacion): backlog inicial con F0` | Epic F0 — Repositorio git (backlog) | `git revert 0186c8d` |
+| `2026-10-02` | R5 — Lautaro Aubert | `ef36474` `ops(changelog): registro de commits F0` | Epic F0 — Change log | `git revert ef36474` |
+| `2026-10-10` | R2 — Tomás Martin | `c9865b2` `feat(isp): ips, loopback y hardening en ISP-1 e ISP-2` | Epic F1 — IPs de enlace + loopbacks y hardening (incluye la baja del cliente DHCP de fábrica) | `git revert c9865b2`; en el router, `/system reset-configuration no-defaults=yes` vuelve a la configuración vacía. Este estado se recupera con `backups/2026-10-10/ISP-1.rsc` e `ISP-2.rsc` (procedimiento en 6.2) |
+| `2026-10-10` | R3 — Tomás Martin | `96102b5` `feat(core): ips, loopback y hardening en CORE-1 y CORE-2` | Epic F1 — IPs de enlace + loopbacks y hardening (incluye la baja del cliente DHCP de fábrica) | `git revert 96102b5`; en el router, `/system reset-configuration no-defaults=yes` vuelve a la configuración vacía. Este estado se recupera con `backups/2026-10-10/CORE-1.rsc` y `CORE-2.rsc` (procedimiento en 6.2) |
+| `2026-10-10` | R1 — Santiago Natalichio Bestosini | `9cd5746` `feat(edge): ips, loopback y hardening en EDGE` | Epic F1 — IPs de enlace + loopbacks y hardening (incluye la baja del cliente DHCP de fábrica) | `git revert 9cd5746`; en el router, `/system reset-configuration no-defaults=yes` vuelve a la configuración vacía. Este estado se recupera con `backups/2026-10-10/EDGE.rsc` (procedimiento en 6.2) |
+| `2026-10-10` | R4 — Juan Bautista Cuenca | `3d2c717` `feat(dist): ips, loopback y hardening en DIST-1 y DIST-2` | Epic F1 — IPs de enlace + loopbacks y hardening (incluye la baja del cliente DHCP de fábrica) | `git revert 3d2c717`; en el router, `/system reset-configuration no-defaults=yes` vuelve a la configuración vacía. Este estado se recupera con `backups/2026-10-10/DIST-1.rsc` y `DIST-2.rsc` (procedimiento en 6.2) |
+| `2026-10-10` | R2/R3 — Tomás Martin | `0571943` `docs(seguridad): claves reales fuera del repo` | Observación del docente en F0 — gestor de secretos y marcadores en lugar de claves | `git revert 0571943` |
+| `2026-10-10` | R2 — Tomás Martin | `a11e092` `docs(seguridad): agrego baja del cliente DHCP de fábrica al hardening` | Epic F1 — Hardening: el CHR trae un cliente DHCP de fábrica que el diseño no usa | `git revert a11e092`; en el router, `/ip dhcp-client add interface=ether1` |
+| `2026-10-10` | R5 — Lautaro Aubert | `94e9a65` `ops(backup): backup post-F1` | Epic F1 — Backup inicial (`/export` de los 7 routers) | `git revert 94e9a65` |
+| `2026-10-10` | R5 — Lautaro Aubert | `6ad0ee8` `docs(memoria): topologia, snapshot BASE y restore probado` | Epic F1 — Despliegue, snapshot BASE, verificación del hardening y restore probado | `git revert 6ad0ee8` |
 
-> Esta tabla se completa con el commit `ops(changelog): registro de commits F0` (R5), que por eso no aparece en ella: un commit no puede contener su propio hash.
+> Un commit no puede contener su propio hash: cada commit `ops(changelog): …` (R5) completa las filas de su fase y queda registrado en la actualización siguiente.
 
 
 ### 6.2 Backups

@@ -43,9 +43,9 @@
 
 ### Repositorio git
 - [x] [R5] crear repo `goys-failover-grupo11` con la estructura de la spec (README, backlog, carpetas)
-- [ ] [R5] dar acceso de lectura al docente y a todos los integrantes
-- [ ] [R1..R5] cada integrante hace su commit inicial siguiendo la convención (trazabilidad por autor)
-- [ ] [R1] enviar F0 al docente y registrar observaciones → aprobación (gate)
+- [x] [R5] dar acceso de lectura al docente y a todos los integrantes
+- [x] [R1..R5] cada integrante hace su commit inicial siguiendo la convención (trazabilidad por autor)
+- [x] [R1] enviar F0 al docente y registrar observaciones → aprobación (gate)
 
 ---
 
@@ -53,33 +53,41 @@
 
 ### Despliegue (7 CHR + 2 switches + 2 hosts)
 - [ ] [R1..R5] verificar GNS3 + imagen CHR instalados en cada laptop
-- [ ] [R5] abrir el proyecto GNS3 `topologia_failover_routing` y verificar 11 nodos / 15 enlaces
-- [ ] [R5] contrastar numeración `etherN` del proyecto con la tabla IPAM; corregir tabla si difiere (change log)
+- [x] [R5] armar el proyecto GNS3 `Failover-G11` desde cero (7 CHR + 2 switches + 2 VPCS) y verificar 11 nodos / 15 enlaces
+- [x] [R5] contrastar numeración `etherN` del proyecto con la tabla IPAM; corregir tabla si difiere (change log) — sin diferencias, la tabla no cambió
 
 ### IPs de enlace + loopbacks
-- [ ] [R2] configurar IPs y loopbacks en ISP-1 e ISP-2
-- [ ] [R1] configurar IPs y loopback en EDGE
-- [ ] [R3] configurar IPs y loopbacks en CORE-1 y CORE-2 (incluido core–core)
-- [ ] [R4] configurar IPs (P2P + LAN) y loopbacks en DIST-1 y DIST-2
-- [ ] [R5] configurar PC-USER y SRV (IP + gateway virtual) y hacer ping a cada vecino directo
+- [x] [R2] configurar IPs y loopbacks en ISP-1 e ISP-2
+- [x] [R1] configurar IPs y loopback en EDGE
+- [x] [R3] configurar IPs y loopbacks en CORE-1 y CORE-2 (incluido core–core)
+- [x] [R4] configurar IPs (P2P + LAN) y loopbacks en DIST-1 y DIST-2
+- [x] [R5] configurar PC-USER y SRV (IP + gateway virtual) y hacer ping a cada vecino directo
 
 ### Snapshot BASE
-- [ ] [R5] tomar snapshot GNS3 `BASE` y documentarlo en la memoria (sección 2)
+- [x] [R5] tomar snapshot GNS3 `BASE` y documentarlo en la memoria (sección 2)
 
 ### Hardening (los 7 routers)
-- [ ] [R2] aplicar password `admin` + usuario `monitor` + servicios apagados en ISP-1/ISP-2
-- [ ] [R1] ídem en EDGE
-- [ ] [R3] ídem en CORE-1/CORE-2
-- [ ] [R4] ídem en DIST-1/DIST-2
-- [ ] [R5] verificar con `/ip service print` y `/user print` en los 7 routers
+- [x] [R2] aplicar password `admin` + usuario `monitor` + servicios apagados en ISP-1/ISP-2
+- [x] [R1] ídem en EDGE
+- [x] [R3] ídem en CORE-1/CORE-2
+- [x] [R4] ídem en DIST-1/DIST-2
+- [x] [R5] verificar con `/ip service print` y `/user print` en los 7 routers
+- [x] [R2] agregar a la política 1.3 la baja del cliente DHCP de fábrica (aplicada en los 7 routers)
 
 ### Backup inicial (`/export`)
-- [ ] [R5] `/export` de los 7 routers → `backups/2026-10-09/` + commit `ops(backup): backup post-F1`
-- [ ] [R5] probar restore de un router desde su `.rsc` y documentar (sección 6.2)
+- [x] [R5] `/export` de los 7 routers → `backups/2026-10-10/` + commit `ops(backup): backup post-F1`
+- [x] [R5] probar restore de un router desde su `.rsc` y documentar (sección 6.2)
+
+### Observaciones del docente sobre F0
+- [x] [R2] definir el gestor de secretos (KeePassXC) y reemplazar las claves de la memoria por marcadores
+- [ ] [R1] crear la base KeePassXC, cargar las claves de `admin` y `monitor` y compartirla con el grupo (antes de configurar claves en F2)
 
 ---
 
 ## Epic F2 — VRRP + OSPF · *vence vie 16/10*
+
+### Pendientes que vienen de F1
+- [ ] [R1] probar en un nodo suelto si cambiar las placas de los CHR de `e1000` a `virtio-net-pci` evita el desorden de interfaces (memoria, sección 2)
 
 ### VRRP (2 grupos, load-sharing, auth)
 - [ ] [R4] configurar VRRP vrid 10 en DIST-1 (master, priority 200) y DIST-2 (backup, 100)
@@ -127,6 +135,7 @@
 - [ ] [R5] escribir plantilla de runbook (detección → respuesta → recuperación → post-mortem) en `runbooks/`
 - [ ] [R4]+[R5] Drill 1 VRRP: apagar DIST-1, medir tiempo, runbook
 - [ ] [R3]+[R5] Drill 2 OSPF: cortar EDGE↔CORE-1, medir reconvergencia, runbook
+- [ ] [R1..R5] definir qué otro integrante opera CORE-1/CORE-2 junto a R3 en el drill 2 (observación del docente en F0)
 - [ ] [R2→R1]+[R5] Drill 3 BGP: cortar ISP-1↔EDGE, medir conmutación, runbook
 - [ ] [R1→R2]+[R5] Drill 4 check-gateway: failover estático, runbook
 - [ ] [R4]+[R5] Drill 5 load-sharing: demostrar ambos DIST activos, runbook
