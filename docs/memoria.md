@@ -128,19 +128,26 @@ Otros problemas que tiene el diagrama y que quedan fuera del alcance del lab (vo
 
 Además: `/tool mac-server set allowed-interface-list=none`, `/tool mac-server mac-winbox set allowed-interface-list=none`, `/ip neighbor discovery-settings set discover-interface-list=none` en las interfaces hacia los ISP, `/tool bandwidth-server set enabled=no`, y `/ip dns` sin `allow-remote-requests`.
 
-**Claves de autenticación del plano de control (claves de laboratorio):**
+**Claves de autenticación del plano de control:**
 
 | Protocolo | Mecanismo | Clave | Dónde |
 |-----------|-----------|-------|-------|
-| OSPF | MD5, key-id 1 | `G0ys-0spf-2026` | Todas las interfaces OSPF activas (EDGE↔CORE, CORE↔CORE, CORE↔DIST) |
-| BGP (ISP-1) | TCP-MD5 | `G0ys-Bgp-Isp1` | Sesión EDGE ↔ ISP-1, configurada en ambos extremos |
-| BGP (ISP-2) | TCP-MD5 | `G0ys-Bgp-Isp2` | Sesión EDGE ↔ ISP-2, configurada en ambos extremos |
-| VRRP grupo 10 | simple (máx. 8 caracteres en RouterOS) | `Vrrp10Us` | DIST-1 y DIST-2, interfaz hacia USERS |
-| VRRP grupo 20 | simple | `Vrrp20Sv` | DIST-1 y DIST-2, interfaz hacia SERVERS |
+| OSPF | MD5, key-id 1 | `<CLAVE_OSPF>` | Todas las interfaces OSPF activas (EDGE↔CORE, CORE↔CORE, CORE↔DIST) |
+| BGP (ISP-1) | TCP-MD5 | `<CLAVE_BGP_ISP1>` | Sesión EDGE ↔ ISP-1, configurada en ambos extremos |
+| BGP (ISP-2) | TCP-MD5 | `<CLAVE_BGP_ISP2>` | Sesión EDGE ↔ ISP-2, configurada en ambos extremos |
+| VRRP grupo 10 | simple (máx. 8 caracteres en RouterOS) | `<CLAVE_VRRP_10>` | DIST-1 y DIST-2, interfaz hacia USERS |
+| VRRP grupo 20 | simple | `<CLAVE_VRRP_20>` | DIST-1 y DIST-2, interfaz hacia SERVERS |
 
 - Claves **distintas por protocolo y por sesión BGP**, para que comprometer una no comprometa las otras.
 - La prueba obligatoria de F4 (adyacencia/sesión con clave incorrecta **debe fallar**) se ejecuta cambiando una sola de estas claves en un extremo.
-- Son claves de laboratorio; en producción se gestionarían en un gestor de secretos y no se versionarían en el repo.
+
+**Gestión de secretos (dónde viven las claves reales):**
+
+- Las claves reales (`admin`, `monitor`, OSPF, BGP y VRRP) **no se escriben en el repo**: ni en esta memoria, ni en los `.rsc`, ni en los mensajes de commit. En su lugar se usan los marcadores de la tabla anterior (`<CLAVE_OSPF>`, `<CLAVE_BGP_ISP1>`, …) y `<CLAVE_ADMIN>` / `<CLAVE_MONITOR>` para los usuarios.
+- El gestor de secretos del grupo es **KeePassXC**: una base cifrada (`.kdbx`) que se comparte entre los cuatro integrantes por fuera del repo, con una contraseña maestra que no se escribe en ningún lado. La base se crea antes de configurar la primera clave de F2 (tarea en `backlog.md`); hasta entonces, las claves de `admin` y `monitor` definidas en F1 las custodia R1 fuera del repo.
+- Antes de commitear un `/export` se revisa que no tenga claves; si las tiene, se reemplazan por el marcador correspondiente.
+- Las claves de laboratorio que figuraban en esta tabla en F0 quedaron en el historial de git, así que se consideran expuestas y **no se usan**. En F2 y F3 se configuran claves nuevas, que solo existen en los routers y en el gestor.
+- Los backups binarios (`.backup`) incluyen usuarios y contraseñas, por lo que tampoco se versionan (ver 1.4).
 
 **Firewall en el EDGE (se implementa en F3, se define aquí):**
 - `input`: aceptar `established,related`; aceptar SSH/Winbox solo desde redes de gestión; aceptar BGP (TCP/179) solo desde las IPs de los ISP; aceptar OSPF (proto 89) solo desde las redes de enlace internas; aceptar ICMP limitado; **drop** el resto.
@@ -186,11 +193,11 @@ Cada cambio en la red queda registrado en **dos lugares que deben coincidir**:
 | Qué | Cuándo | Cómo | Dónde |
 |-----|--------|------|-------|
 | Export de configuración en texto | **Antes y después** de cada cambio en un router, y al cierre de cada epic (F1…F4) | `/export file=<ROUTER>-<YYYYMMDD>-<etiqueta>` (ej. `DIST-1-20261009-postF1`) | `backups/<YYYY-MM-DD>/<ROUTER>.rsc` en el repo, commit `ops(backup): …` |
-| Backup binario | Al cierre de cada epic | `/system backup save name=<ROUTER>-<YYYYMMDD>` | `backups/<YYYY-MM-DD>/<ROUTER>.backup` |
+| Backup binario | Al cierre de cada epic | `/system backup save name=<ROUTER>-<YYYYMMDD>-<etiqueta>` (ej. `EDGE-20261010-F1`) | Dentro del router (`/file`). **No se versiona**: incluye usuarios y contraseñas (ver 1.3) |
 | Snapshot GNS3 | BASE (post-F1), y al cierre de F2/F3 y F4 | Snapshot del proyecto GNS3 con nombre `BASE`, `F2F3`, `F4` | Local de cada integrante (no se versiona por tamaño) |
 | **Restore probado** | Una vez en F1 (BASE) y una vez en F4 | `/system reset-configuration` → `/import <archivo>.rsc` en un router de prueba; verificar con `/export` que coincide | Evidencia en sección 6.2 |
 
-- Los `.rsc` **nunca** incluyen contraseñas de usuario (RouterOS no las exporta) y se revisan antes de commitear para no filtrar las claves MD5 de producción (en el lab se aceptan por ser claves de laboratorio).
+- Los `.rsc` **nunca** incluyen contraseñas de usuario (RouterOS no las exporta) y se revisan antes de commitear para no filtrar claves de OSPF, BGP o VRRP: si aparecen, se reemplazan por su marcador (ver 1.3).
 - Responsable: R5. Verificación: cada backup debe poder hacer `/import` sin errores.
 
 ---
