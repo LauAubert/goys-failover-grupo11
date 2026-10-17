@@ -96,7 +96,7 @@ Otros problemas que tiene el diagrama y que quedan fuera del alcance del lab (vo
 
 | Enlace | Protocolo |
 |--------|-----------|
-| ISP-1 ↔ EDGE, ISP-2 ↔ EDGE | eBGP (TCP-MD5). Los ISP anuncian default-route (`default-originate`); el EDGE anuncia 10.10.0.0/24 y 10.20.0.0/24 (redistribuidas desde OSPF). |
+| ISP-1 ↔ EDGE, ISP-2 ↔ EDGE | eBGP (TCP-MD5). Los ISP anuncian default-route (`default-originate`) y su propio loopback /32 (agregado en F3, ver 4.1); el EDGE anuncia 10.10.0.0/24 y 10.20.0.0/24 (redistribuidas desde OSPF). |
 | EDGE ↔ CORE-x, CORE-1 ↔ CORE-2, CORE-x ↔ DIST-x | OSPF área 0, autenticación MD5. El EDGE inyecta la default en OSPF. |
 | LAN USERS / SERVERS | VRRP con autenticación. Interfaces pasivas en OSPF (se anuncia la red pero no se forman vecinos hacia los hosts). |
 
@@ -291,10 +291,25 @@ save
 | Prueba | Comando | Resultado |
 |--------|---------|-----------|
 | ping entre vecinos directos (F1) | `/ping <IP del vecino> count=4` desde cada router, por cada enlace; `ping` desde PC-USER y SRV a DIST-1 y DIST-2 | Responden los 15 enlaces, en los dos sentidos. Capturas `*-ping-*.png` en `capturas/F1/`. En F1 todavía no hay ruteo entre nodos que no son vecinos (llega con OSPF y BGP) |
-| ping intra-LAN (PC-USER ↔ SRV) | <!-- --> | <!-- --> |
-| traceroute a ISP (loopback) | <!-- --> | <!-- --> |
+| gateway virtual (F2) | `ping 10.10.0.1` desde PC-USER; `ping 10.20.0.1` desde SRV | Responden 5 de 5. Capturas `03-*-ping-gateway.png` en `capturas/F2/` |
+| ping intra-LAN (PC-USER ↔ SRV) | `ping 10.20.0.100` desde PC-USER; `ping 10.10.0.100` desde SRV | Responden 5 de 5, con `ttl=63` (un salto: el DIST master del gateway de cada host). Capturas `06-PC-USER-ping-SRV.png` y `06-SRV-ping-PC-USER.png` en `capturas/F2/` |
+| ping a loopback interna (F2) | `/ping 10.255.255.1 count=4` desde DIST-1 | 4 de 4, a través del core (`06-DIST-1-ping-loopback-EDGE.png`) |
+| salida a "Internet" (F3) | `ping 198.51.100.1` y `ping 198.51.100.2` desde PC-USER | Responden los dos loopbacks, 5 de 5 (`06-PC-USER-ping-trace-ISP-1-ISP-2.png` en `capturas/F3/`). Antes del ajuste descrito abajo, `198.51.100.2` no respondía |
+| traceroute a ISP (loopback) | `trace 198.51.100.1` y `trace 198.51.100.2` desde PC-USER | Hacia ISP-1: `10.10.0.2` (DIST-1) → `10.0.0.13` (CORE-1) → `10.0.0.1` (EDGE) → `198.51.100.1`. Hacia ISP-2: `10.10.0.2` → `10.0.0.25` (CORE-2) → `10.0.0.5` (EDGE) → `198.51.100.2`. DIST-1 reparte entre los dos CORE (ECMP). Capturas `05-…` y `06-…` en `capturas/F3/` |
 
-> Pegar capturas de las tablas: `/routing/route/print`, `/interface/vrrp/print`, `/routing/bgp/session/print`.
+**VRRP (F2).** DIST-1 es master del grupo 10 y backup del 20; DIST-2, al revés. La IP virtual del grupo en backup figura como inválida (`I`) en `/ip address print` hasta que el master se cae: es lo esperado.
+
+![VRRP en DIST-1](../capturas/F2/02-DIST-1-vrrp.png)
+
+**OSPF (F2).** 7 adyacencias Full, una por cada cable interno, incluido el core–core, vistas desde las dos puntas: EDGE 2, CORE-1 4, CORE-2 4, DIST-1 2 y DIST-2 2 (capturas `04-*-ospf-vecinos.png`). En DIST-1 aparecen por OSPF las loopbacks y los /30 que no son suyos, y algunas rutas con dos caminos de igual costo, uno por cada CORE (`05-DIST-1-rutas-ospf.png`). En una de las verificaciones, DIST-2 mostró primero un solo vecino; unos 40 segundos después tenía los dos en Full: era el tiempo de armado de la adyacencia.
+
+![Vecinos OSPF de CORE-1](../capturas/F2/04-CORE-1-ospf-vecinos.png)
+
+**BGP y redistribución (F3).** El EDGE tiene las 2 sesiones establecidas y dos rutas por defecto (una por ISP, activa la de ISP-1). Cada ISP recibe por BGP **solo** `10.10.0.0/24` y `10.20.0.0/24`: el EDGE redistribuye OSPF hacia BGP con el filtro de salida `lans-a-isp`, que acepta esas dos redes; lo demás (los /30 internos y las loopbacks) queda rechazado, porque la acción por defecto de una cadena de filtro en RouterOS es `reject`. El EDGE inyecta la ruta por defecto en OSPF con `originate-default=if-installed`, y DIST-1 la aprende por los dos CORE (capturas `01-…` a `04-…` en `capturas/F3/`).
+
+![Sesiones BGP en EDGE](../capturas/F3/01-EDGE-bgp-sesiones.png)
+
+**Ajuste en F3: los ISP anuncian su loopback.** Con la configuración inicial (cada ISP manda solo la ruta por defecto), PC-USER llegaba a `198.51.100.1` pero no a `198.51.100.2`: ISP-1 respondía *Destination network unreachable* (`05-PC-USER-ping-ISP-2-sin-loopback-anunciado.png`). Causa: el EDGE manda todo por la ruta por defecto activa, que es la de ISP-1, y ISP-1 no tiene ruta hacia el loopback de ISP-2. Solución, acordada por el grupo: cada ISP anuncia además su loopback /32 (`/ip firewall address-list` con el loopback y `output.network` en la conexión BGP). El EDGE aprende `198.51.100.1/32` por ISP-1 y `198.51.100.2/32` por ISP-2, y cada ping sale por su proveedor. ISP-1 sigue recibiendo solo las dos LANs: el filtro del EDGE no le pasa el loopback de ISP-2 (capturas `07-…` y `08-…`).
 
 ### 4.2 Los 5 drills de failover
 
@@ -341,10 +356,10 @@ save
 | Mecanismo | Dónde se aplicó | Verificación (¿cómo probaron que funciona?) |
 |-----------|-----------------|---------------------------------------------|
 | Hardening (usuarios/servicios) | Los 7 routers (F1): clave de `admin`, usuario `monitor` (grupo `read`), servicios `telnet`, `ftp`, `www`, `www-ssl`, `api` y `api-ssl` deshabilitados, `ssh` y `winbox` restringidos a las redes de gestión, MAC server, descubrimiento de vecinos y bandwidth-server apagados, cliente DHCP de fábrica eliminado | En cada router: `/user print` (solo `admin` y `monitor`), `/ip service print` (servicios con `X`, y `address` restringido en `ssh` y `winbox`) e `/ip dhcp-client print` vacío. Capturas `*-hardening.png` y `*-sin-dhcp-client.png` en `capturas/F1/`; los `.rsc` de `configs/` lo reflejan |
-| OSPF MD5 | <!-- --> | <!-- --> |
-| BGP TCP-MD5 | <!-- --> | <!-- --> |
-| VRRP auth | <!-- --> | <!-- --> |
-| Firewall/ACL (edge) | <!-- --> | <!-- --> |
+| OSPF MD5 | Los 7 enlaces internos (F2): `auth=md5 auth-id=1` con `<CLAVE_OSPF>` en las interfaces activas de EDGE (`ether3`, `ether4`), CORE-1 y CORE-2 (`ether1`–`ether4`) y DIST-1 y DIST-2 (`ether1`, `ether2`), todas en modo `ptp`. Loopbacks y LANs como interfaces pasivas: se anuncian, pero no forman vecinos | Las 7 adyacencias llegan a Full con la misma clave en las dos puntas (capturas `04-*-ospf-vecinos.png` en `capturas/F2/`). `/routing ospf interface-template print` muestra `auth=md5 auth-id=1` sin mostrar la clave, y el `/export` no la incluye. La prueba con clave incorrecta queda para F4 |
+| BGP TCP-MD5 | Sesión EDGE ↔ ISP-1 con `<CLAVE_BGP_ISP1>` y EDGE ↔ ISP-2 con `<CLAVE_BGP_ISP2>`, configuradas en las dos puntas (`tcp-md5-key` en `/routing bgp connection`) (F3). En RouterOS 7.21.5 el router-id va en `/routing bgp instance` y la conexión la referencia | 2 sesiones establecidas en EDGE y 1 en cada ISP (`01-EDGE-bgp-sesiones.png`, `03-ISP-*-bgp-rutas.png` en `capturas/F3/`). Siguen establecidas después de aplicar el firewall, sin reinicios (`09-EDGE-bgp-despues-firewall.png`). La clave no aparece en `print` ni en el `/export`. La prueba con clave incorrecta queda para F4 |
+| VRRP auth | Grupos 10 (USERS, `ether3`) y 20 (SERVERS, `ether4`) en DIST-1 y DIST-2 (F2): `version=2`, `authentication=simple`, claves `<CLAVE_VRRP_10>` y `<CLAVE_VRRP_20>`. Se fija la versión 2 porque RouterOS crea los grupos en versión 3 por defecto, y según su documentación la autenticación está obsoleta en VRRP v3 | Un solo master por grupo, con la misma clave en los dos routers: DIST-1 master del 10 y DIST-2 master del 20, los dos con `authentication=simple` (`02-DIST-*-vrrp.png` en `capturas/F2/`). Si las claves o las versiones no coincidieran, cada router se creería master. Los gateways virtuales responden (`03-*-ping-gateway.png`) |
+| Firewall/ACL (edge) | EDGE (F3), según 1.3: listas `gestion` (loopbacks y LAN SERVERS) y `lans`, lista de interfaces `WAN` (`ether1`, `ether2`); 8 reglas en `input` (conexiones en curso, inválidas, SSH/Winbox solo desde `gestion`, BGP solo desde cada ISP, OSPF solo desde `10.0.0.0/24`, ICMP, drop del resto) y 4 en `forward` (conexiones en curso, inválidas, drop de conexiones nuevas desde `WAN`, salida desde `lans`). El ICMP se acepta sin límite: la política dice "ICMP limitado", pero se dejó sin `limit=` porque el ping se usa en todas las verificaciones y en los drills de F4 | PC-USER → ISP-1 responde (`10-…`); ISP-1 → `10.10.0.100` no responde, y la regla de forward "nada nuevo desde los ISP" contó esos 4 paquetes (`11-…`, `14-EDGE-firewall-stats.png`); ISP-1 → EDGE por ICMP responde (`12-…`); SSH de ISP-1 al EDGE no llega a pedir contraseña, y el contador de la regla de drop final pasó de 0 a 6 paquetes de 60 bytes, los intentos de conexión descartados (`13-…`). BGP y OSPF siguen arriba (`09-…`) |
 
 > Prueba de seguridad obligatoria: adyacencia OSPF / sesión BGP debe **fallar** con clave incorrecta. Documentar el resultado.
 
@@ -407,6 +422,23 @@ save
 
 Procedimiento de restore que queda para esta plataforma: reset → verificar el orden de las placas por MAC y corregirlo si hace falta → import → quitar el cliente DHCP → recrear usuarios → ping al vecino → export y comparación. Un restore no se da por probado hasta que el ping responde: en el intento 1 la configuración coincidía y el router estaba aislado.
 
+**Backups de F2 y F3 (2026-10-16).** Las dos fases se hicieron en la misma sesión, así que comparten la carpeta y se distinguen por el sufijo:
+
+| Qué | Cómo | Dónde |
+|-----|------|-------|
+| Snapshot GNS3 previo | `pre-F2`, con los nodos apagados, antes de tocar nada (`01-snapshot-pre-F2.png`) | Máquina donde corre el laboratorio |
+| Export "antes" | `/export file=<ROUTER>-20261016-preF2` en los 7 routers | Dentro de cada router (punto de vuelta atrás, no se versiona) |
+| Export post-F2 | `/export` de los 7 routers al terminar VRRP y OSPF, y `/export file=<ROUTER>-20261016-postF2` dentro de cada uno | `backups/2026-10-16/<ROUTER>-postF2.rsc` |
+| Backup binario post-F2 | `/system backup save name=<ROUTER>-20261016-F2` | Dentro de cada router (`07-*-backup-binario.png` en `capturas/F2/`) |
+| Export post-F3 | `/export` de los 7 routers al terminar BGP y firewall, y `/export file=<ROUTER>-20261016-postF3` dentro de cada uno | `backups/2026-10-16/<ROUTER>-postF3.rsc` y, como configuración vigente, `configs/<ROUTER>.rsc` |
+| Backup binario post-F3 | `/system backup save name=<ROUTER>-20261016-F3` | Dentro de cada router (`15-*-backup-binario.png` en `capturas/F3/`) |
+| Snapshot GNS3 | `F2F3`, con los nodos apagados (`16-snapshot-F2F3.png`) | Máquina donde corre el laboratorio |
+
+- Antes de guardar cada export se buscaron `auth-key`, `tcp-md5-key` y `password`: RouterOS 7 no incluye esos datos en `/export`, y no apareció ninguno. **Por eso un restore desde un `.rsc` de F2 en adelante necesita volver a cargar las claves de OSPF, BGP y VRRP desde KeePassXC**, además de los usuarios (paso 4 del procedimiento).
+- Dos veces se guardó un archivo con el nombre de otro router: los exports "antes" de seis routers salieron con el nombre de ISP-1, y el backup binario post-F2 de ISP-2 con el de EDGE. Se borraron con `/file remove` y se rehicieron con el nombre correcto; las capturas muestran el estado corregido. Mismo error que el backup de EDGE en F1: conviene revisar el prompt del router antes de pegar cada bloque.
+
+**Incidente: el orden de detección de las placas cambia en cada arranque.** Al prender la red desde el snapshot `pre-F2`, los 7 routers tenían cada nombre en su MAC correcta (`ether1` = `…00:00`, …) y las direcciones en su cable, pero en todos el `default-name` no coincidía con el nombre: en la mayoría, `ether1` tenía `default-name=ether2` y al revés. Se probó un reinicio en caliente (`/system reboot`) y uno en frío (Stop/Start del nodo en GNS3) sobre ISP-2: los dos dejaron las placas en otro orden distinto. Como el orden cambia en cada arranque, reiniciar hasta que coincida no es viable. Todos los exports de F2 y F3 traen entonces líneas `set [ find default-name=… ] … name=…` en `/interface ethernet`. **Decisión del grupo:** se versionan tal cual los genera RouterOS, sin editarlos, y el procedimiento de restore suma un paso: después de fijar los nombres por MAC, y antes de importar, se quitan del `.rsc` las líneas con `name=` de `/interface ethernet` (renombrarían las placas según el orden de ese arranque). Esto reemplaza el chequeo de F1 de "reiniciar el nodo y volver a exportar". La causa de fondo probable (placas `e1000` en vez de `virtio-net-pci`) sigue como tarea en el backlog.
+
 ### 6.3 Monitoreo
 
 > Qué se monitorea (enlaces, vecinos OSPF, sesiones BGP, VRRP) y con qué (SNMP, chequeos). (F4)
@@ -430,6 +462,34 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 | `14-DIST-2-*.png` | Export de DIST-2 con las interfaces en otro orden, y ping después del reinicio |
 | `15-*-backup-binario.png` | Backup binario dentro de cada router (`/file print`) |
 | `16-restore-intento-1-*.png`, `17-restore-intento-2-*.png` | Restore probado en ISP-2: intento fallido e intento correcto |
+
+**F2: `capturas/F2/`**
+
+| Archivos | Contenido |
+|----------|-----------|
+| `01-snapshot-pre-F2.png` | Snapshot `pre-F2` antes de tocar los routers |
+| `02-DIST-1-vrrp.png`, `02-DIST-2-vrrp.png` | Grupos VRRP (master/backup, versión 2, auth `simple`) y las IP virtuales |
+| `03-PC-USER-ping-gateway.png`, `03-SRV-ping-gateway.png` | Los gateways virtuales `10.10.0.1` y `10.20.0.1` responden |
+| `04-*-ospf-vecinos.png` (5) | Vecinos OSPF Full en EDGE, CORE-1, CORE-2, DIST-1 y DIST-2 |
+| `05-DIST-1-rutas-ospf.png` | Tabla de rutas de DIST-1 con las rutas aprendidas por OSPF |
+| `06-*.png` | Ping PC-USER ↔ SRV y de DIST-1 a la loopback del EDGE |
+| `07-*-backup-binario.png` (7) | Export y backup binario post-F2 dentro de cada router (`/file print`) |
+
+**F3: `capturas/F3/`**
+
+| Archivos | Contenido |
+|----------|-----------|
+| `01-EDGE-bgp-sesiones.png`, `02-EDGE-rutas-default-bgp.png` | Sesiones BGP del EDGE y las dos rutas por defecto |
+| `03-ISP-1-bgp-rutas.png`, `03-ISP-2-bgp-rutas.png` | Sesión de cada ISP y las rutas que recibe (solo las dos LANs) |
+| `04-DIST-1-ruta-default-ospf.png` | La ruta por defecto llega a DIST-1 por OSPF |
+| `05-PC-USER-ping-ISP-2-sin-loopback-anunciado.png` | Ping a ISP-2 fallido antes del ajuste (ver 4.1), y `trace` a ISP-1 |
+| `06-PC-USER-ping-trace-ISP-1-ISP-2.png` | Ping a los dos loopbacks y `trace` a ISP-2, después del ajuste |
+| `07-EDGE-rutas-bgp-loopbacks-ISP.png`, `08-ISP-*-rutas-despues-del-anuncio.png` | Rutas BGP del EDGE con los loopbacks de cada ISP; los ISP siguen recibiendo solo las LANs |
+| `09-EDGE-*-despues-firewall.png` | BGP y OSPF siguen arriba con el firewall aplicado |
+| `10-…` a `13-…` | Pruebas del firewall: salida desde la LAN, ISP → LAN bloqueado, ICMP al EDGE, SSH desde ISP-1 bloqueado (contadores antes y después) |
+| `14-EDGE-firewall-stats.png` | Contadores de las 12 reglas del firewall |
+| `15-*-backup-binario.png` (7) | Export y backup binario post-F3 dentro de cada router |
+| `16-snapshot-F2F3.png` | Snapshot `F2F3` |
 
 ---
 
@@ -461,17 +521,17 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 
 ### Redes
 - [x] 7 CHR + 2 switches + 2 hosts levantados y cableados
-- [ ] VRRP operativo (2 grupos, load-sharing)
-- [ ] OSPF área 0 con adyacencias (incluido core–core)
-- [ ] BGP eBGP ×2 establecido (multi-homing)
+- [x] VRRP operativo (2 grupos, load-sharing)
+- [x] OSPF área 0 con adyacencias (incluido core–core)
+- [x] BGP eBGP ×2 establecido (multi-homing)
 - [ ] Los 5 drills ejecutados y documentados (runbook + post-mortem + tiempo)
 
 ### Seguridad
 - [x] Hardening aplicado (password, usuario mínimo, servicios apagados)
-- [ ] OSPF MD5 funcionando
-- [ ] BGP TCP-MD5 funcionando
-- [ ] VRRP auth funcionando
-- [ ] Firewall edge aplicado
+- [x] OSPF MD5 funcionando
+- [x] BGP TCP-MD5 funcionando
+- [x] VRRP auth funcionando
+- [x] Firewall edge aplicado
 - [ ] Prueba con clave incorrecta → debe **fallar** (documentado)
 
 ### Operación
