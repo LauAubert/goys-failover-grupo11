@@ -1,4 +1,4 @@
-# 2026-10-16 22:57:55 by RouterOS 7.21.5
+# 2026-10-16 23:09:31 by RouterOS 7.21.5
 # system id = ZEighdbDNJC
 #
 /interface bridge
@@ -8,6 +8,8 @@ set [ find default-name=ether2 ] disable-running-check=no name=ether1
 set [ find default-name=ether1 ] disable-running-check=no name=ether2
 set [ find default-name=ether3 ] disable-running-check=no
 set [ find default-name=ether4 ] disable-running-check=no
+/interface list
+add comment="enlaces hacia los ISP" name=WAN
 /routing bgp instance
 add as=65000 comment="EDGE, router-id = loopback" name=bgp-as65000 router-id=10.255.255.1
 /routing ospf instance
@@ -16,12 +18,33 @@ add name=ospf-g11 originate-default=if-installed router-id=10.255.255.1
 add instance=ospf-g11 name=backbone
 /ip neighbor discovery-settings
 set discover-interface-list=none
+/interface list member
+add interface=ether1 list=WAN
+add interface=ether2 list=WAN
 /ip address
 add address=203.0.113.2/30 comment="hacia ISP-1" interface=ether1 network=203.0.113.0
 add address=203.0.113.6/30 comment="hacia ISP-2" interface=ether2 network=203.0.113.4
 add address=10.0.0.1/30 comment="hacia CORE-1" interface=ether3 network=10.0.0.0
 add address=10.0.0.5/30 comment="hacia CORE-2" interface=ether4 network=10.0.0.4
 add address=10.255.255.1 interface=loopback network=10.255.255.1
+/ip firewall address-list
+add address=10.255.255.0/24 comment=loopbacks list=gestion
+add address=10.20.0.0/24 comment="LAN SERVERS" list=gestion
+add address=10.10.0.0/24 comment="LAN USERS" list=lans
+add address=10.20.0.0/24 comment="LAN SERVERS" list=lans
+/ip firewall filter
+add action=accept chain=input comment="input: conexiones en curso" connection-state=established,related
+add action=drop chain=input comment="input: invalidas" connection-state=invalid
+add action=accept chain=input comment="input: SSH y Winbox solo desde gestion" dst-port=22,8291 protocol=tcp src-address-list=gestion
+add action=accept chain=input comment="input: BGP desde ISP-1" dst-port=179 protocol=tcp src-address=203.0.113.1
+add action=accept chain=input comment="input: BGP desde ISP-2" dst-port=179 protocol=tcp src-address=203.0.113.5
+add action=accept chain=input comment="input: OSPF desde enlaces internos" protocol=ospf src-address=10.0.0.0/24
+add action=accept chain=input comment="input: ICMP" protocol=icmp
+add action=drop chain=input comment="input: todo lo demas"
+add action=accept chain=forward comment="forward: conexiones en curso" connection-state=established,related
+add action=drop chain=forward comment="forward: invalidas" connection-state=invalid
+add action=drop chain=forward comment="forward: nada nuevo desde los ISP hacia adentro" connection-state=new in-interface-list=WAN
+add action=accept chain=forward comment="forward: salida desde las LAN" src-address-list=lans
 /ip service
 set ftp disabled=yes
 set ssh address=10.255.255.0/24,10.20.0.0/24
