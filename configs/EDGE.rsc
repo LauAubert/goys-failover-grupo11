@@ -1,4 +1,4 @@
-# 2026-10-16 22:24:51 by RouterOS 7.21.5
+# 2026-10-16 22:57:55 by RouterOS 7.21.5
 # system id = ZEighdbDNJC
 #
 /interface bridge
@@ -8,6 +8,8 @@ set [ find default-name=ether2 ] disable-running-check=no name=ether1
 set [ find default-name=ether1 ] disable-running-check=no name=ether2
 set [ find default-name=ether3 ] disable-running-check=no
 set [ find default-name=ether4 ] disable-running-check=no
+/routing bgp instance
+add as=65000 comment="EDGE, router-id = loopback" name=bgp-as65000 router-id=10.255.255.1
 /routing ospf instance
 add name=ospf-g11 originate-default=if-installed router-id=10.255.255.1
 /routing ospf area
@@ -28,6 +30,12 @@ set www disabled=yes
 set winbox address=10.255.255.0/24,10.20.0.0/24
 set api disabled=yes
 set api-ssl disabled=yes
+/routing bgp connection
+add as=65000 comment="eBGP con ISP-1" instance=bgp-as65000 local.role=ebgp name=hacia-ISP-1 output.filter-chain=lans-a-isp .redistribute=ospf remote.address=203.0.113.1 .as=65001
+add as=65000 comment="eBGP con ISP-2" instance=bgp-as65000 local.role=ebgp name=hacia-ISP-2 output.filter-chain=lans-a-isp .redistribute=ospf remote.address=203.0.113.5 .as=65002
+/routing filter rule
+add chain=lans-a-isp comment="LAN USERS" rule="if (dst == 10.10.0.0/24) { accept }"
+add chain=lans-a-isp comment="LAN SERVERS" rule="if (dst == 10.20.0.0/24) { accept }"
 /routing ospf interface-template
 add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5 hacia CORE" interfaces=ether3,ether4 type=ptp
 add area=backbone comment="loopback = router-id" interfaces=loopback passive
