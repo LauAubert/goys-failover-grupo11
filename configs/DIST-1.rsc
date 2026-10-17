@@ -1,4 +1,4 @@
-# 2026-10-16 22:15:08 by RouterOS 7.21.5
+# 2026-10-16 22:32:35 by RouterOS 7.21.5
 # system id = Om+hKlKu04D
 #
 /interface bridge
@@ -11,6 +11,10 @@ set [ find default-name=ether4 ] disable-running-check=no
 /interface vrrp
 add authentication=simple comment="USERS: DIST-1 master" interface=ether3 name=vrrp10 priority=200 version=2 vrid=10
 add authentication=simple comment="SERVERS: DIST-1 backup" interface=ether4 name=vrrp20 version=2 vrid=20
+/routing ospf instance
+add name=ospf-g11 router-id=10.255.255.4
+/routing ospf area
+add instance=ospf-g11 name=backbone
 /ip neighbor discovery-settings
 set discover-interface-list=none
 /ip address
@@ -29,6 +33,10 @@ set www disabled=yes
 set winbox address=10.255.255.0/24,10.20.0.0/24
 set api disabled=yes
 set api-ssl disabled=yes
+/routing ospf interface-template
+add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5 hacia CORE" interfaces=ether1,ether2 type=ptp
+add area=backbone comment="loopback = router-id" interfaces=loopback passive
+add area=backbone comment="LANs USERS y SERVERS, pasivas" interfaces=ether3,ether4 passive
 /system identity
 set name=DIST-1
 /tool bandwidth-server
