@@ -80,7 +80,7 @@
 
 ### Observaciones del docente sobre F0
 - [x] [R2] definir el gestor de secretos (KeePassXC) y reemplazar las claves de la memoria por marcadores
-- [ ] [R1] crear la base KeePassXC, cargar las claves de `admin` y `monitor` y compartirla con el grupo (antes de configurar claves en F2)
+- [x] [R1] crear la base KeePassXC, cargar las claves de `admin` y `monitor` y compartirla con el grupo (antes de configurar claves en F2)
 
 ---
 
@@ -90,40 +90,41 @@
 - [ ] [R1] probar en un nodo suelto si cambiar las placas de los CHR de `e1000` a `virtio-net-pci` evita el desorden de interfaces (memoria, sección 2)
 
 ### VRRP (2 grupos, load-sharing, auth)
-- [ ] [R4] configurar VRRP vrid 10 en DIST-1 (master, priority 200) y DIST-2 (backup, 100)
-- [ ] [R4] configurar VRRP vrid 20 en DIST-2 (master, priority 200) y DIST-1 (backup, 100)
-- [ ] [R4] activar auth simple en ambos grupos con las claves de 1.3
-- [ ] [R5] verificar master/backup con `/interface vrrp print` y ping al gateway virtual desde los hosts
+- [x] [R4] configurar VRRP vrid 10 en DIST-1 (master, priority 200) y DIST-2 (backup, 100)
+- [x] [R4] configurar VRRP vrid 20 en DIST-2 (master, priority 200) y DIST-1 (backup, 100)
+- [x] [R4] activar auth simple en ambos grupos con las claves de 1.3 (VRRP versión 2: en v3 la auth está obsoleta)
+- [x] [R5] verificar master/backup con `/interface vrrp print` y ping al gateway virtual desde los hosts
 
 ### OSPF área 0 (con MD5, incluido core–core)
-- [ ] [R3] configurar OSPF área 0 en CORE-1/CORE-2 (todas las P2P + loopback) con MD5
-- [ ] [R1] configurar OSPF en EDGE (hacia ambos CORE) con MD5 + default-route
-- [ ] [R4] configurar OSPF en DIST-1/DIST-2 (P2P activas, LANs pasivas) con MD5
-- [ ] [R5] verificar adyacencias FULL con `/routing ospf neighbor print` en todos los routers
+- [x] [R3] configurar OSPF área 0 en CORE-1/CORE-2 (todas las P2P + loopback) con MD5
+- [x] [R1] configurar OSPF en EDGE (hacia ambos CORE) con MD5 + default-route
+- [x] [R4] configurar OSPF en DIST-1/DIST-2 (P2P activas, LANs pasivas) con MD5
+- [x] [R5] verificar adyacencias FULL con `/routing ospf neighbor print` en todos los routers
 
 ### Verificación L3 (ping intra-LAN + gateway virtual)
-- [ ] [R5] ping PC-USER ↔ SRV, ping a loopbacks internos, capturas → `capturas/F2/`
-- [ ] [R5] backup post-F2 + change log
+- [x] [R5] ping PC-USER ↔ SRV, ping a loopbacks internos, capturas → `capturas/F2/`
+- [x] [R5] backup post-F2 + change log
 
 ---
 
 ## Epic F3 — BGP + firewall · *vence vie 16/10*
 
 ### eBGP multi-homing (2 sesiones, TCP-MD5)
-- [ ] [R2] configurar eBGP en ISP-1 (AS 65001) e ISP-2 (AS 65002) con default-originate y TCP-MD5
-- [ ] [R1] configurar eBGP en EDGE (AS 65000) hacia ambos ISP con TCP-MD5
-- [ ] [R5] verificar `established` con `/routing bgp session print`
+- [x] [R2] configurar eBGP en ISP-1 (AS 65001) e ISP-2 (AS 65002) con default-originate y TCP-MD5
+- [x] [R1] configurar eBGP en EDGE (AS 65000) hacia ambos ISP con TCP-MD5
+- [x] [R5] verificar `established` con `/routing bgp session print`
 
 ### Redistribución OSPF→BGP
-- [ ] [R1] redistribuir las LANs 10.10.0.0/24 y 10.20.0.0/24 hacia BGP (filtro de salida)
-- [ ] [R2] verificar que los ISP reciben las LANs
+- [x] [R1] redistribuir las LANs 10.10.0.0/24 y 10.20.0.0/24 hacia BGP (filtro de salida)
+- [x] [R2] verificar que los ISP reciben las LANs
 
 ### Salida a "Internet" (host → loopback ISP)
-- [ ] [R5] ping/traceroute desde PC-USER a 198.51.100.1 y 198.51.100.2, capturas
+- [x] [R2] anunciar el loopback de cada ISP por BGP para que el host alcance los dos (ajuste de F3, memoria 4.1)
+- [x] [R5] ping/traceroute desde PC-USER a 198.51.100.1 y 198.51.100.2, capturas
 
 ### Firewall edge (filtro + plano de gestión)
-- [ ] [R1] implementar reglas input/forward definidas en 1.3
-- [ ] [R5] verificar que ssh/winbox solo entran desde redes de gestión; backup post-F3
+- [x] [R1] implementar reglas input/forward definidas en 1.3
+- [x] [R5] verificar que ssh/winbox solo entran desde redes de gestión (SSH desde ISP-1 bloqueado, con contadores); backup post-F3
 
 ---
 
@@ -148,6 +149,9 @@
 - [ ] [R3] cambiar clave OSPF en un extremo → adyacencia cae; capturar y revertir
 - [ ] [R1] cambiar clave BGP en un extremo → sesión cae; capturar y revertir
 - [ ] [R5] backup post-F4 + change log
+
+### Restore probado (política 1.4, una vez en F4)
+- [ ] [R5] probar restore de un router con config de F2/F3: fijar placas por MAC, quitar del `.rsc` las líneas `name=` de `/interface ethernet`, importar y volver a cargar las claves desde KeePassXC (memoria 6.2)
 
 ---
 
