@@ -37,8 +37,12 @@ monitoreo, runbooks y 5 drills de failover).
 | F1 | Topología + hardening + backup | vie 9/10 | 🟢 aprobado (100/100) |
 | F2 | VRRP + OSPF | vie 16/10 | 🟡 entregado, esperando devolución |
 | F3 | BGP + firewall | vie 16/10 | 🟡 entregado, esperando devolución |
-| F4 | Drills + monitoreo | mar 20/10 | ⚪ pendiente |
-| F5 | Memoria + defensa | vie 23/10 | ⚪ pendiente |
+| F4 | Drills + monitoreo | mar 20/10 | 🟡 entregada el vie 23/10 junto con F5 (ver nota), esperando devolución |
+| F5 | Memoria + defensa | vie 23/10 | 🟡 entregada, esperando devolución y defensa oral |
+
+### Nota sobre la entrega de F4
+
+F4 vencía el martes 20/10 y no se entregó en fecha. No se llegó a completar para esa fecha y el grupo prefirió ejecutarla completa antes que entregar una versión parcial (3 días de atraso). La fase se ejecutó completa en una sesión de laboratorio el 22/10 y se entrega junto con F5 el 23/10, con todos sus criterios: los 5 drills con runbook, tiempo medido y post-mortem (los de OSPF y BGP con una variante de corte silencioso), monitoreo con SNMP y netwatch, la prueba de clave incorrecta en OSPF y BGP, la verificación de que el failover no degradó la seguridad, el restore probado y el backup post-F4. Los commits respetan la convención de siempre: cada integrante commitea lo que dirigió, y el change log (memoria 6.1) los registra.
 
 ## Estructura del repositorio
 
@@ -48,9 +52,9 @@ monitoreo, runbooks y 5 drills de failover).
 ├── docs/
 │   ├── memoria.md     # memoria del lab (sección 1 = F0)
 │   └── diagramas/     # topología y diagramas de diseño
-├── configs/           # .rsc finales por router (F1–F3)
+├── configs/           # .rsc finales por router (F1–F4)
 ├── backups/           # /export por fecha (F1 en adelante)
-├── runbooks/          # un .md por drill (F4)
+├── runbooks/          # plantilla + un .md por drill (F4)
 └── capturas/          # screenshots por fase/drill
 ```
 
