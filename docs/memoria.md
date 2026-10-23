@@ -237,13 +237,127 @@ Proyecto GNS3 `Failover-G11`, armado por el grupo desde cero en GNS3 2.2.61 con 
 > Un bloque por dispositivo. Se puede referenciar el archivo `.rsc` del repo y pegar el contenido final. (F1–F3)
 
 ### 3.1 ISP-1
+
+Archivo: [`configs/ISP-1.rsc`](../configs/ISP-1.rsc), configuración vigente al cierre de F4 (el export post-F4 de `backups/2026-10-22/` es idéntico). Las claves no aparecen: RouterOS no las incluye en el `/export`; en los comentarios figuran los marcadores de 1.3.
+
 ```routeros
-<!-- config final -->
+# Interfaces virtuales: loopback (= router-id, se anuncia por BGP) y destino de prueba 192.0.2.1 de los drills 3 y 4 (igual en los dos ISP, no se anuncia por BGP; ver 1.2)
+/interface bridge
+add comment="destino de prueba de los drills (no se anuncia por BGP)" name=internet-test
+add comment="loopback = router-id" name=loopback
+
+# Placas: RouterOS registra el orden en que las detectó en ese arranque. Las líneas con name= aparecen cuando no coincide con el de los adaptadores de GNS3 (sección 2); se quitan antes de un restore (6.2)
+/interface ethernet
+set [ find default-name=ether4 ] disable-running-check=no name=ether1
+set [ find default-name=ether1 ] disable-running-check=no name=ether2
+set [ find default-name=ether2 ] disable-running-check=no name=ether3
+set [ find default-name=ether3 ] disable-running-check=no name=ether4
+
+# BGP: AS 65001, router-id = loopback
+/routing bgp instance
+add as=65001 comment="ISP-1, router-id = loopback" name=bgp-as65001 router-id=198.51.100.1
+
+# Hardening: sin descubrimiento de vecinos
+/ip neighbor discovery-settings
+set discover-interface-list=none
+
+# Direcciones: enlace hacia EDGE, loopback y destino de prueba
+/ip address
+add address=203.0.113.1/30 comment="hacia EDGE" interface=ether1 network=203.0.113.0
+add address=198.51.100.1 interface=loopback network=198.51.100.1
+add address=192.0.2.1 interface=internet-test network=192.0.2.1
+
+# Lo que el ISP anuncia por BGP además de la ruta por defecto: solo su loopback (ajuste de F3, ver 4.1)
+/ip firewall address-list
+add address=198.51.100.1 comment="loopback ISP-1, se anuncia por BGP" list=anuncio-bgp
+
+# Hardening: servicios en texto plano y API apagados; SSH y Winbox solo desde las redes de gestión
+/ip service
+set ftp disabled=yes
+set ssh address=10.255.255.0/24,10.20.0.0/24
+set telnet disabled=yes
+set www disabled=yes
+set winbox address=10.255.255.0/24,10.20.0.0/24
+set api disabled=yes
+set api-ssl disabled=yes
+
+# eBGP con el EDGE, autenticación TCP-MD5 (<CLAVE_BGP_ISP1>, no aparece en el export). Manda siempre la ruta por defecto y el loopback (lista anuncio-bgp)
+/routing bgp connection
+add as=65001 comment="eBGP con EDGE, TCP-MD5" instance=bgp-as65001 local.role=ebgp name=hacia-EDGE output.default-originate=always .network=anuncio-bgp remote.address=203.0.113.2 .as=65000
+
+# Nombre del router
+/system identity
+set name=ISP-1
+
+# Hardening: bandwidth-server y acceso por MAC (MAC-Telnet y MAC-Winbox) apagados
+/tool bandwidth-server
+set enabled=no
+/tool mac-server
+set allowed-interface-list=none
+/tool mac-server mac-winbox
+set allowed-interface-list=none
 ```
 
 ### 3.2 ISP-2
+
+Archivo: [`configs/ISP-2.rsc`](../configs/ISP-2.rsc), configuración vigente al cierre de F4 (el export post-F4 de `backups/2026-10-22/` es idéntico). Las claves no aparecen: RouterOS no las incluye en el `/export`; en los comentarios figuran los marcadores de 1.3.
+
 ```routeros
-<!-- config final -->
+# Interfaces virtuales: loopback (= router-id, se anuncia por BGP) y destino de prueba 192.0.2.1 de los drills 3 y 4 (igual en los dos ISP, no se anuncia por BGP; ver 1.2)
+/interface bridge
+add comment="destino de prueba de los drills (no se anuncia por BGP)" name=internet-test
+add comment="loopback = router-id" name=loopback
+
+# Placas: RouterOS registra el orden en que las detectó en ese arranque. Las líneas con name= aparecen cuando no coincide con el de los adaptadores de GNS3 (sección 2); se quitan antes de un restore (6.2)
+/interface ethernet
+set [ find default-name=ether1 ] disable-running-check=no
+set [ find default-name=ether2 ] disable-running-check=no
+set [ find default-name=ether3 ] disable-running-check=no
+set [ find default-name=ether4 ] disable-running-check=no
+
+# BGP: AS 65002, router-id = loopback
+/routing bgp instance
+add as=65002 comment="ISP-2, router-id = loopback" name=bgp-as65002 router-id=198.51.100.2
+
+# Hardening: sin descubrimiento de vecinos
+/ip neighbor discovery-settings
+set discover-interface-list=none
+
+# Direcciones: enlace hacia EDGE, loopback y destino de prueba
+/ip address
+add address=203.0.113.5/30 comment="hacia EDGE" interface=ether1 network=203.0.113.4
+add address=198.51.100.2 interface=loopback network=198.51.100.2
+add address=192.0.2.1 interface=internet-test network=192.0.2.1
+
+# Lo que el ISP anuncia por BGP además de la ruta por defecto: solo su loopback (ajuste de F3, ver 4.1)
+/ip firewall address-list
+add address=198.51.100.2 comment="loopback ISP-2, se anuncia por BGP" list=anuncio-bgp
+
+# Hardening: servicios en texto plano y API apagados; SSH y Winbox solo desde las redes de gestión
+/ip service
+set ftp disabled=yes
+set ssh address=10.255.255.0/24,10.20.0.0/24
+set telnet disabled=yes
+set www disabled=yes
+set winbox address=10.255.255.0/24,10.20.0.0/24
+set api disabled=yes
+set api-ssl disabled=yes
+
+# eBGP con el EDGE, autenticación TCP-MD5 (<CLAVE_BGP_ISP2>, no aparece en el export). Manda siempre la ruta por defecto y el loopback (lista anuncio-bgp)
+/routing bgp connection
+add as=65002 comment="eBGP con EDGE, TCP-MD5" instance=bgp-as65002 local.role=ebgp name=hacia-EDGE output.default-originate=always .network=anuncio-bgp remote.address=203.0.113.6 .as=65000
+
+# Nombre del router
+/system identity
+set name=ISP-2
+
+# Hardening: bandwidth-server y acceso por MAC (MAC-Telnet y MAC-Winbox) apagados
+/tool bandwidth-server
+set enabled=no
+/tool mac-server
+set allowed-interface-list=none
+/tool mac-server mac-winbox
+set allowed-interface-list=none
 ```
 
 ### 3.3 EDGE
@@ -252,13 +366,149 @@ Proyecto GNS3 `Failover-G11`, armado por el grupo desde cero en GNS3 2.2.61 con 
 ```
 
 ### 3.4 CORE-1
+
+Archivo: [`configs/CORE-1.rsc`](../configs/CORE-1.rsc), configuración vigente al cierre de F4 (el export post-F4 de `backups/2026-10-22/` es idéntico). Las claves no aparecen: RouterOS no las incluye en el `/export`; en los comentarios figuran los marcadores de 1.3.
+
 ```routeros
-<!-- config final -->
+# Interfaces virtuales: loopback (= router-id)
+/interface bridge
+add comment="loopback = router-id" name=loopback
+
+# Placas: RouterOS registra el orden en que las detectó en ese arranque. Las líneas con name= aparecen cuando no coincide con el de los adaptadores de GNS3 (sección 2); se quitan antes de un restore (6.2)
+/interface ethernet
+set [ find default-name=ether1 ] disable-running-check=no
+set [ find default-name=ether2 ] disable-running-check=no
+set [ find default-name=ether3 ] disable-running-check=no
+set [ find default-name=ether4 ] disable-running-check=no
+
+# OSPF: instancia con router-id = loopback
+/routing ospf instance
+add name=ospf-g11 router-id=10.255.255.2
+
+# Área 0 (backbone)
+/routing ospf area
+add instance=ospf-g11 name=backbone
+
+# SNMP de solo lectura (F4): la comunidad de fábrica (public) queda deshabilitada y la nueva solo acepta consultas desde las redes de gestión. El nombre de la comunidad es un secreto (KeePassXC)
+/snmp community
+set [ find default=yes ] disabled=yes
+add addresses=10.255.255.0/24,10.20.0.0/24 name=<COMUNIDAD_SNMP>
+
+# Hardening: sin descubrimiento de vecinos
+/ip neighbor discovery-settings
+set discover-interface-list=none
+
+# Direcciones: enlaces hacia EDGE, CORE-2 (core–core), DIST-1 y DIST-2, y loopback
+/ip address
+add address=10.0.0.2/30 comment="hacia EDGE" interface=ether1 network=10.0.0.0
+add address=10.0.0.9/30 comment="hacia CORE-2" interface=ether2 network=10.0.0.8
+add address=10.0.0.13/30 comment="hacia DIST-1" interface=ether3 network=10.0.0.12
+add address=10.0.0.21/30 comment="hacia DIST-2" interface=ether4 network=10.0.0.20
+add address=10.255.255.2 interface=loopback network=10.255.255.2
+
+# Hardening: servicios en texto plano y API apagados; SSH y Winbox solo desde las redes de gestión
+/ip service
+set ftp disabled=yes
+set ssh address=10.255.255.0/24,10.20.0.0/24
+set telnet disabled=yes
+set www disabled=yes
+set winbox address=10.255.255.0/24,10.20.0.0/24
+set api disabled=yes
+set api-ssl disabled=yes
+
+# Interfaces OSPF: los 4 enlaces (EDGE, core–core, DIST-1, DIST-2) punto a punto con MD5 (<CLAVE_OSPF>, no aparece en el export); loopback pasiva
+/routing ospf interface-template
+add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5" interfaces=ether1,ether2,ether3,ether4 type=ptp
+add area=backbone comment="loopback = router-id" interfaces=loopback passive
+
+# SNMP habilitado, con contacto y ubicación
+/snmp
+set contact="Grupo 11" enabled=yes location=CORE-1
+
+# Nombre del router
+/system identity
+set name=CORE-1
+
+# Hardening: bandwidth-server y acceso por MAC (MAC-Telnet y MAC-Winbox) apagados
+/tool bandwidth-server
+set enabled=no
+/tool mac-server
+set allowed-interface-list=none
+/tool mac-server mac-winbox
+set allowed-interface-list=none
 ```
 
 ### 3.5 CORE-2
+
+Archivo: [`configs/CORE-2.rsc`](../configs/CORE-2.rsc), configuración vigente al cierre de F4 (el export post-F4 de `backups/2026-10-22/` es idéntico). Las claves no aparecen: RouterOS no las incluye en el `/export`; en los comentarios figuran los marcadores de 1.3.
+
 ```routeros
-<!-- config final -->
+# Interfaces virtuales: loopback (= router-id)
+/interface bridge
+add comment="loopback = router-id" name=loopback
+
+# Placas: RouterOS registra el orden en que las detectó en ese arranque. Las líneas con name= aparecen cuando no coincide con el de los adaptadores de GNS3 (sección 2); se quitan antes de un restore (6.2)
+/interface ethernet
+set [ find default-name=ether1 ] disable-running-check=no
+set [ find default-name=ether2 ] disable-running-check=no
+set [ find default-name=ether3 ] disable-running-check=no
+set [ find default-name=ether4 ] disable-running-check=no
+
+# OSPF: instancia con router-id = loopback
+/routing ospf instance
+add name=ospf-g11 router-id=10.255.255.3
+
+# Área 0 (backbone)
+/routing ospf area
+add instance=ospf-g11 name=backbone
+
+# SNMP de solo lectura (F4): la comunidad de fábrica (public) queda deshabilitada y la nueva solo acepta consultas desde las redes de gestión. El nombre de la comunidad es un secreto (KeePassXC)
+/snmp community
+set [ find default=yes ] disabled=yes
+add addresses=10.255.255.0/24,10.20.0.0/24 name=<COMUNIDAD_SNMP>
+
+# Hardening: sin descubrimiento de vecinos
+/ip neighbor discovery-settings
+set discover-interface-list=none
+
+# Direcciones: enlaces hacia EDGE, CORE-1 (core–core), DIST-1 y DIST-2, y loopback
+/ip address
+add address=10.0.0.6/30 comment="hacia EDGE" interface=ether1 network=10.0.0.4
+add address=10.0.0.10/30 comment="hacia CORE-1" interface=ether2 network=10.0.0.8
+add address=10.0.0.17/30 comment="hacia DIST-1" interface=ether3 network=10.0.0.16
+add address=10.0.0.25/30 comment="hacia DIST-2" interface=ether4 network=10.0.0.24
+add address=10.255.255.3 interface=loopback network=10.255.255.3
+
+# Hardening: servicios en texto plano y API apagados; SSH y Winbox solo desde las redes de gestión
+/ip service
+set ftp disabled=yes
+set ssh address=10.255.255.0/24,10.20.0.0/24
+set telnet disabled=yes
+set www disabled=yes
+set winbox address=10.255.255.0/24,10.20.0.0/24
+set api disabled=yes
+set api-ssl disabled=yes
+
+# Interfaces OSPF: los 4 enlaces (EDGE, core–core, DIST-1, DIST-2) punto a punto con MD5 (<CLAVE_OSPF>, no aparece en el export); loopback pasiva
+/routing ospf interface-template
+add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5" interfaces=ether1,ether2,ether3,ether4 type=ptp
+add area=backbone comment="loopback = router-id" interfaces=loopback passive
+
+# SNMP habilitado, con contacto y ubicación
+/snmp
+set contact="Grupo 11" enabled=yes location=CORE-2
+
+# Nombre del router
+/system identity
+set name=CORE-2
+
+# Hardening: bandwidth-server y acceso por MAC (MAC-Telnet y MAC-Winbox) apagados
+/tool bandwidth-server
+set enabled=no
+/tool mac-server
+set allowed-interface-list=none
+/tool mac-server mac-winbox
+set allowed-interface-list=none
 ```
 
 ### 3.6 DIST-1
@@ -358,7 +608,7 @@ save
 | Mecanismo | Dónde se aplicó | Verificación (¿cómo probaron que funciona?) |
 |-----------|-----------------|---------------------------------------------|
 | Hardening (usuarios/servicios) | Los 7 routers (F1): clave de `admin`, usuario `monitor` (grupo `read`), servicios `telnet`, `ftp`, `www`, `www-ssl`, `api` y `api-ssl` deshabilitados, `ssh` y `winbox` restringidos a las redes de gestión, MAC server, descubrimiento de vecinos y bandwidth-server apagados, cliente DHCP de fábrica eliminado | En cada router: `/user print` (solo `admin` y `monitor`), `/ip service print` (servicios con `X`, y `address` restringido en `ssh` y `winbox`) e `/ip dhcp-client print` vacío. Capturas `*-hardening.png` y `*-sin-dhcp-client.png` en `capturas/F1/`; los `.rsc` de `configs/` lo reflejan |
-| OSPF MD5 | Los 7 enlaces internos (F2): `auth=md5 auth-id=1` con `<CLAVE_OSPF>` en las interfaces activas de EDGE (`ether3`, `ether4`), CORE-1 y CORE-2 (`ether1`–`ether4`) y DIST-1 y DIST-2 (`ether1`, `ether2`), todas en modo `ptp`. Loopbacks y LANs como interfaces pasivas: se anuncian, pero no forman vecinos | Las 7 adyacencias llegan a Full con la misma clave en las dos puntas (capturas `04-*-ospf-vecinos.png` en `capturas/F2/`). `/routing ospf interface-template print` muestra `auth=md5 auth-id=1` sin mostrar la clave, y el `/export` no la incluye. La prueba con clave incorrecta queda para F4 |
+| OSPF MD5 | Los 7 enlaces internos (F2): `auth=md5 auth-id=1` con `<CLAVE_OSPF>` en las interfaces activas de EDGE (`ether3`, `ether4`), CORE-1 y CORE-2 (`ether1`–`ether4`) y DIST-1 y DIST-2 (`ether1`, `ether2`), todas en modo `ptp`. Loopbacks y LANs como interfaces pasivas: se anuncian, pero no forman vecinos | Las 7 adyacencias llegan a Full con la misma clave en las dos puntas (capturas `04-*-ospf-vecinos.png` en `capturas/F2/`). `/routing ospf interface-template print` muestra `auth=md5 auth-id=1` sin mostrar la clave, y el `/export` no la incluye. **Prueba con clave incorrecta (F4):** en CORE-1 se cambió la clave del template de sus 4 enlaces por una incorrecta (`clave-incorrecta-F4`). Desde ese momento el log registra `authentication failed ... md5 mismatch` de los 4 vecinos y las 4 adyacencias caen por `timeout` al vencer el *dead interval* (unos 30 s después). La red siguió funcionando por CORE-2 (PC-USER llega a `198.51.100.1`). Con la clave real, cargada desde KeePassXC, los 4 vecinos vuelven a Full (`11-CORE-1-ospf-*.png` y `11-PC-USER-ping-sin-CORE-1.png` en `capturas/F4/`) |
 | BGP TCP-MD5 | Sesión EDGE ↔ ISP-1 con `<CLAVE_BGP_ISP1>` y EDGE ↔ ISP-2 con `<CLAVE_BGP_ISP2>`, configuradas en las dos puntas (`tcp-md5-key` en `/routing bgp connection`) (F3). En RouterOS 7.21.5 el router-id va en `/routing bgp instance` y la conexión la referencia | 2 sesiones establecidas en EDGE y 1 en cada ISP (`01-EDGE-bgp-sesiones.png`, `03-ISP-*-bgp-rutas.png` en `capturas/F3/`). Siguen establecidas después de aplicar el firewall, sin reinicios (`09-EDGE-bgp-despues-firewall.png`). La clave no aparece en `print` ni en el `/export`. La prueba con clave incorrecta queda para F4 |
 | VRRP auth | Grupos 10 (USERS, `ether3`) y 20 (SERVERS, `ether4`) en DIST-1 y DIST-2 (F2): `version=2`, `authentication=simple`, claves `<CLAVE_VRRP_10>` y `<CLAVE_VRRP_20>`. Se fija la versión 2 porque RouterOS crea los grupos en versión 3 por defecto, y según su documentación la autenticación está obsoleta en VRRP v3 | Un solo master por grupo, con la misma clave en los dos routers: DIST-1 master del 10 y DIST-2 master del 20, los dos con `authentication=simple` (`02-DIST-*-vrrp.png` en `capturas/F2/`). Si las claves o las versiones no coincidieran, cada router se creería master. Los gateways virtuales responden (`03-*-ping-gateway.png`) |
 | Firewall/ACL (edge) | EDGE (F3), según 1.3: listas `gestion` (loopbacks y LAN SERVERS) y `lans`, lista de interfaces `WAN` (`ether1`, `ether2`); 8 reglas en `input` (conexiones en curso, inválidas, SSH/Winbox solo desde `gestion`, BGP solo desde cada ISP, OSPF solo desde `10.0.0.0/24`, ICMP, drop del resto) y 4 en `forward` (conexiones en curso, inválidas, drop de conexiones nuevas desde `WAN`, salida desde `lans`). El ICMP se acepta sin límite: la política dice "ICMP limitado", pero se dejó sin `limit=` porque el ping se usa en todas las verificaciones y en los drills de F4 | PC-USER → ISP-1 responde (`10-…`); ISP-1 → `10.10.0.100` no responde, y la regla de forward "nada nuevo desde los ISP" contó esos 4 paquetes (`11-…`, `14-EDGE-firewall-stats.png`); ISP-1 → EDGE por ICMP responde (`12-…`); SSH de ISP-1 al EDGE no llega a pedir contraseña, y el contador de la regla de drop final pasó de 0 a 6 paquetes de 60 bytes, los intentos de conexión descartados (`13-…`). BGP y OSPF siguen arriba (`09-…`) |
