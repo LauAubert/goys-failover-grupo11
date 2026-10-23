@@ -839,41 +839,50 @@ save
 
 ### 4.2 Los 5 drills de failover
 
-> Para cada drill, documentar con la estructura **detección → respuesta → recuperación → post-mortem** y el **tiempo medido**. (F4)
+Cada drill tiene su runbook en `runbooks/` con la estructura **detección → respuesta → recuperación → post-mortem** y el tiempo medido (plantilla en `runbooks/plantilla-runbook.md`). El laboratorio lo ejecutó el anfitrión de GNS3 (R1); en cada drill, quien figura como "dirigió" dictó y explicó los comandos y revisó las salidas. Midió siempre R5.
+
+**Cómo se midió.** Ping continuo durante cada drill, contando las respuestas perdidas. El ping de RouterOS manda una solicitud por segundo aunque no haya respuesta (cada `timeout` = 1 s). En VPCS (PC-USER y SRV) cada `timeout` equivale a unos **2 s**: lo calibramos con cronómetro en el drill 3 (93 respuestas perdidas en ~160 s). Los relojes de los routers no tienen NTP y se desfasaron durante la sesión, así que las horas del log solo se comparan dentro de un mismo router.
+
+Para los drills 3 y 4 se usó el destino de prueba `192.0.2.1` (1.2): lo responde el ISP por el que sale la empresa.
 
 #### Drill 1 — VRRP: se cae el gateway
-- **Detección:** <!-- -->
-- **Respuesta:** <!-- -->
-- **Recuperación:** <!-- -->
-- **Tiempo medido:** <!-- -->
-- **Post-mortem** (¿por qué funcionó? ¿qué aprendieron?): <!-- -->
+Runbook [`runbooks/drill-1-vrrp.md`](../runbooks/drill-1-vrrp.md) · capturas `06-drill1-*` · dirigió Juan Bautista Cuenca.
+- **Detección:** con `/interface disable ether3` en DIST-1 (su pata hacia la LAN USERS), el ping de PC-USER a `198.51.100.1` pierde 8 respuestas. DIST-2 registra `vrrp10 now MASTER, master down timer`: tomó el control porque dejó de recibir los anuncios de DIST-1.
+- **Respuesta:** DIST-2 toma la IP y la MAC virtuales del grupo 10. El primer salto del `trace` desde PC-USER pasa de `10.10.0.2` a `10.10.0.3`. El host no cambia nada.
+- **Recuperación:** `/interface enable ether3`. DIST-1 recupera el master por prioridad (200 contra 100) 11 s después de habilitar la interfaz; mientras tanto atiende DIST-2, y el ping no pierde ninguna respuesta.
+- **Tiempo medido:** **~16 s** (8 `timeout` en VPCS). El *master down interval* teórico es 3 × 1 s + 0,61 s ≈ 3,6 s. No encontramos la causa de la diferencia; en el drill 5 el mismo mecanismo cortó ~4 s.
+- **Post-mortem:** funciona porque el host apunta a una IP virtual y no a un router. Al apagar la interfaz, el master no avisa que se va, así que el backup espera el temporizador completo. Observación no prevista: 2 s después del corte, DIST-1 fue master del grupo 20 durante 1 s (causa no confirmada). Limitación de VRRP: no detecta la caída de los enlaces de un DIST hacia los CORE; eso lo cubre OSPF.
 
 #### Drill 2 — OSPF: se corta el camino interno
-- **Detección:** <!-- -->
-- **Respuesta:** <!-- -->
-- **Recuperación:** <!-- -->
-- **Tiempo medido:** <!-- -->
-- **Post-mortem:** <!-- -->
+Runbook [`runbooks/drill-2-ospf.md`](../runbooks/drill-2-ospf.md) · capturas `07-drill2-*` · dirigió Juan Bautista Cuenca con Tomás Martin (los CORE operados por alguien distinto de R3, como pidió el docente).
+- **Detección:** se cortó el enlace EDGE ↔ CORE-1 de dos formas. (A) `/interface disable ether1` en CORE-1: el vecino EDGE cae al instante. (B) Corte silencioso, con un filtro de pérdida del 100 % en el cable (GNS3, *Packet filters*): la interfaz sigue arriba y CORE-1 recién da por caído al vecino cuando vence el *dead interval* (log: `state: Full } timeout`). Se probó primero con *Suspend*, pero GNS3 le baja la señal a la placa y el corte no es silencioso.
+- **Respuesta:** CORE-1 llega al EDGE por el cable core–core: `traceroute` `10.0.0.10` (CORE-2) → `10.255.255.1`, y el ping vuelve con TTL 63.
+- **Recuperación:** (A) `/interface enable ether1`: vecino otra vez en Full en 9 s. (B) Se saca el filtro y la adyacencia se arma sola.
+- **Tiempo medido:** (A) **~2 s** (2 de 15 en el ping de CORE-1). (B) **~35 s**: 31 s hasta que vence el *dead interval* (40 s desde el último *hello*) y 4 s hasta instalar la ruta nueva. PC-USER perdió ~16 s en (B): su tráfico se reparte entre los dos CORE y solo una parte pasaba por el cable cortado.
+- **Post-mortem:** el cable core–core (corrección 3 del diagrama) es lo que le da salida a CORE-1. El tiempo de convergencia depende de cómo se entera el router: si la interfaz cae, son segundos; si el cable deja de pasar tráfico sin bajar la señal, manda el *dead interval*. Para bajarlo: *hellos* más cortos o BFD.
 
 #### Drill 3 — BGP: se cae el proveedor
-- **Detección:** <!-- -->
-- **Respuesta:** <!-- -->
-- **Recuperación:** <!-- -->
-- **Tiempo medido:** <!-- -->
-- **Post-mortem:** <!-- -->
+Runbook [`runbooks/drill-3-bgp.md`](../runbooks/drill-3-bgp.md) · capturas `08-drill3-*` · dirigió Santiago Natalichio Bestosini (rotación R1 → ISP).
+- **Detección:** (A) `/interface disable ether1` en el EDGE: la ruta por defecto de ISP-1 queda inactiva porque su *gateway* quedó en una interfaz apagada. **La sesión BGP siguió establecida**: el cambio no lo hizo BGP. (B) Corte silencioso con el filtro del 100 % en el cable ISP-1 ↔ EDGE: durante más de 2 minutos la ruta y la sesión siguen activas mientras el tráfico se pierde (el EDGE llega a responder `host unreachable` porque no resuelve la MAC de ISP-1), hasta que el log registra `HoldTimer expired` y la sesión pasa a `Idle`.
+- **Respuesta:** la ruta por defecto activa pasa a ser la de ISP-2. El ping de PC-USER a `192.0.2.1` vuelve a responder, ahora desde ISP-2 (torch en el EDGE: el tráfico sale por `ether2`).
+- **Recuperación:** (A) se habilita la interfaz. (B) Se saca el filtro y la sesión se restablece sola; al volver la salida a ISP-1 se pierde 1 respuesta.
+- **Tiempo medido:** (A) **~2 s** (1 respuesta en todo el ciclo). (B) **~160 s** (cronómetro; 93 respuestas perdidas). Teoría: el *hold time* (180 s) vence entre 120 y 180 s después del corte, según cuándo llegó el último *keepalive* (cada 60 s).
+- **Post-mortem:** con los valores por defecto, BGP tarda minutos en detectar un corte silencioso. Es una decisión de diseño del protocolo: une organizaciones y cerrar la sesión por una pérdida corta obliga a retirar y volver a anunciar todas las rutas. Para acelerarlo: bajar *keepalive* y *hold*, o BFD (las dos cosas se acuerdan con el proveedor), o sumar un chequeo del siguiente salto como el del drill 4.
 
 #### Drill 4 — check-gateway: failover estático de enlace
-- **Detección:** <!-- -->
-- **Respuesta:** <!-- -->
-- **Recuperación:** <!-- -->
-- **Tiempo medido:** <!-- -->
-- **Post-mortem:** <!-- -->
+Runbook [`runbooks/drill-4-check-gateway.md`](../runbooks/drill-4-check-gateway.md) · capturas `09-drill4-*` · dirigió Tomás Martin (rotación R2 → EDGE).
+- **Detección:** en el EDGE se agregaron dos rutas por defecto estáticas con `check-gateway=ping` (distancia 1 por ISP-1 y 2 por ISP-2; le ganan a las de eBGP, que tienen 20). Se apagó `ether1` de ISP-1: el EDGE mantiene su interfaz arriba, pero el ping de check-gateway (cada 10 s) deja de tener respuesta y la estática de ISP-1 queda inactiva.
+- **Respuesta:** queda activa la estática de respaldo por ISP-2 y el ping a `192.0.2.1` vuelve a responder.
+- **Recuperación:** `/interface enable ether1` en ISP-1: la estática principal vuelve a estar activa. Después se borraron las rutas del drill (`/ip route remove [find comment~"drill 4"]`); no quedan en la configuración final, y BGP volvió a mandar. La sesión BGP con ISP-1 no llegó a caer.
+- **Tiempo medido:** **~17 s** (cronómetro). Teoría: dos pings fallidos, entre 10 y 20 s. La captura del ping de PC-USER no se guardó.
+- **Post-mortem:** ante el mismo tipo de corte que el drill 3 (B), check-gateway tardó ~17 s contra ~160 s de BGP. Es simple y no necesita acuerdo con el proveedor, pero solo prueba el primer salto y no anuncia nada. BGP es el multi-homing real (anuncia las redes de la empresa a los dos proveedores) y conviene complementarlo con detección rápida. Al cargar el drill, un error de pegado creó dos veces la ruta de respaldo; no cambió el resultado y se borró con el resto.
 
 #### Drill 5 — Load-sharing VRRP: ambos DIST activos
-- **Detección:** <!-- -->
-- **Respuesta:** <!-- -->
-- **Recuperación:** <!-- -->
-- **Post-mortem:** <!-- -->
+Runbook [`runbooks/drill-5-load-sharing.md`](../runbooks/drill-5-load-sharing.md) · capturas `10-drill5-*` · dirigió Juan Bautista Cuenca.
+- **Detección:** no se rompe nada. `/interface vrrp print`: DIST-1 master del grupo 10 y DIST-2 del 20. Desde PC-USER, el primer salto del `trace` es `10.10.0.2` (DIST-1); desde SRV, `10.20.0.3` (DIST-2).
+- **Respuesta:** cada DIST atiende una LAN. Parte opcional: con `/interface disable ether4` en DIST-2, SRV pierde 2 respuestas (**~4 s**) y su primer salto pasa a `10.20.0.2`: DIST-1 atiende las dos LANs.
+- **Recuperación:** `/interface enable ether4`: DIST-2 recupera el master del grupo 20 por prioridad. No se guardaron el ping de la vuelta ni los logs VRRP.
+- **Post-mortem:** los dos routers trabajan siempre y cada uno es el respaldo del otro. El load-sharing de VRRP reparte grupos de hosts (una LAN por router), no el tráfico de un mismo host: si una LAN tuviera mucho más tráfico, la carga no quedaría pareja.
 
 ---
 
@@ -887,7 +896,14 @@ save
 | VRRP auth | Grupos 10 (USERS, `ether3`) y 20 (SERVERS, `ether4`) en DIST-1 y DIST-2 (F2): `version=2`, `authentication=simple`, claves `<CLAVE_VRRP_10>` y `<CLAVE_VRRP_20>`. Se fija la versión 2 porque RouterOS crea los grupos en versión 3 por defecto, y según su documentación la autenticación está obsoleta en VRRP v3 | Un solo master por grupo, con la misma clave en los dos routers: DIST-1 master del 10 y DIST-2 master del 20, los dos con `authentication=simple` (`02-DIST-*-vrrp.png` en `capturas/F2/`). Si las claves o las versiones no coincidieran, cada router se creería master. Los gateways virtuales responden (`03-*-ping-gateway.png`). **En F4:** en los drills 1 y 5 el backup tomó la IP virtual cuando cayó el master y la devolvió cuando el master volvió, con la autenticación activa. Después de los drills, `/interface vrrp print detail` en DIST-1 sigue mostrando `authentication=simple` y versión 2 en los dos grupos, sin mostrar la clave (`12-DIST-1-vrrp-auth.png` en `capturas/F4/`). No se hizo prueba con clave incorrecta en VRRP: la consigna la pide para OSPF y BGP |
 | Firewall/ACL (edge) | EDGE (F3), según 1.3: listas `gestion` (loopbacks y LAN SERVERS) y `lans`, lista de interfaces `WAN` (`ether1`, `ether2`); 8 reglas en `input` (conexiones en curso, inválidas, SSH/Winbox solo desde `gestion`, BGP solo desde cada ISP, OSPF solo desde `10.0.0.0/24`, ICMP, drop del resto) y 4 en `forward` (conexiones en curso, inválidas, drop de conexiones nuevas desde `WAN`, salida desde `lans`). El ICMP se acepta sin límite: la política dice "ICMP limitado", pero se dejó sin `limit=` porque el ping se usa en todas las verificaciones y en los drills de F4 | PC-USER → ISP-1 responde (`10-…`); ISP-1 → `10.10.0.100` no responde, y la regla de forward "nada nuevo desde los ISP" contó esos 4 paquetes (`11-…`, `14-EDGE-firewall-stats.png`); ISP-1 → EDGE por ICMP responde (`12-…`); SSH de ISP-1 al EDGE no llega a pedir contraseña, y el contador de la regla de drop final pasó de 0 a 6 paquetes de 60 bytes, los intentos de conexión descartados (`13-…`). BGP y OSPF siguen arriba (`09-…`) |
 
-> Prueba de seguridad obligatoria: adyacencia OSPF / sesión BGP debe **fallar** con clave incorrecta. Documentar el resultado.
+**Prueba de seguridad obligatoria (F4):** con una clave incorrecta, la adyacencia OSPF y la sesión BGP **fallan** (filas de OSPF MD5 y BGP TCP-MD5). En los dos casos se volvió a la clave real desde KeePassXC y se verificó que todo volviera a levantar.
+
+**El failover no degradó la seguridad (F4).** Verificado al terminar los drills (`12-*.png` en `capturas/F4/`):
+
+- OSPF: `auth=md5 auth-id=1` sigue en los templates de enlaces de CORE-2 y DIST-1.
+- VRRP: `authentication=simple`, versión 2, en los dos grupos de DIST-1.
+- Firewall del EDGE: las 12 reglas siguen. Desde ISP-1, `ping 10.10.0.100` no responde, y la regla de forward "nada nuevo desde los ISP hacia adentro" pasa de 0 a 4 paquetes descartados (contadores antes y después).
+- Los `.rsc` post-F4 de los 7 routers son idénticos a las configuraciones de `configs/`: los drills no dejaron rutas, claves incorrectas ni cambios sueltos (6.2).
 
 ---
 
@@ -977,11 +993,67 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 
 **Incidente: el orden de detección de las placas cambia en cada arranque.** Al prender la red desde el snapshot `pre-F2`, los 7 routers tenían cada nombre en su MAC correcta (`ether1` = `…00:00`, …) y las direcciones en su cable, pero en todos el `default-name` no coincidía con el nombre: en la mayoría, `ether1` tenía `default-name=ether2` y al revés. Se probó un reinicio en caliente (`/system reboot`) y uno en frío (Stop/Start del nodo en GNS3) sobre ISP-2: los dos dejaron las placas en otro orden distinto. Como el orden cambia en cada arranque, reiniciar hasta que coincida no es viable. Todos los exports de F2 y F3 traen entonces líneas `set [ find default-name=… ] … name=…` en `/interface ethernet`. **Decisión del grupo:** se versionan tal cual los genera RouterOS, sin editarlos, y el procedimiento de restore suma un paso: después de fijar los nombres por MAC, y antes de importar, se quitan del `.rsc` las líneas con `name=` de `/interface ethernet` (renombrarían las placas según el orden de ese arranque). Esto reemplaza el chequeo de F1 de "reiniciar el nodo y volver a exportar". La causa de fondo probable (placas `e1000` en vez de `virtio-net-pci`) sigue como tarea en el backlog.
 
+**Backup post-F4 (2026-10-22/23).**
+
+| Qué | Cómo | Dónde |
+|-----|------|-------|
+| Snapshot GNS3 previo | `pre-F4`, con los nodos apagados (`01-snapshot-pre-F4.png`) | Máquina donde corre el laboratorio |
+| Export "antes" | `/export file=<ROUTER>-20261022-preF4` en los 7 routers | Dentro de cada router (punto de vuelta atrás, no se versiona) |
+| Export post-F4 | `/export` de los 7 routers al terminar drills y restore | `backups/2026-10-22/<ROUTER>-postF4.rsc` |
+| Export y backup binario dentro del router | `/export file=<ROUTER>-20261022-postF4` y `/system backup save name=<ROUTER>-20261022-F4` | Dentro de cada router (`14-*-backup-binario.png`) |
+| Snapshot GNS3 | `F4`, con los nodos apagados (`15-snapshot-F4.png`) | Máquina donde corre el laboratorio |
+
+- Los 7 `.rsc` post-F4 son **idénticos** a `configs/` salvo la hora del encabezado: los drills no dejaron cambios en la red. No tienen claves; el nombre de la comunidad SNMP se reemplazó por `<COMUNIDAD_SNMP>`.
+- Se repitió el error de F2: el export dentro del router quedó con el nombre del EDGE en los 7. Se borró y se rehízo con `/export file=([/system identity get name] . "-20261022-postF4")`, que arma el nombre con la identidad del propio router y evita el error de raíz. Queda como forma de hacer los próximos backups.
+
+**Restore probado (F4): CORE-2.** Se eligió CORE-2 porque tiene clave de OSPF (prueba la carga de claves desde KeePassXC) y porque lo operó alguien distinto de R3 (dirigió R5), como pidió el docente.
+
+1. `/export file=CORE-2-20261022-preRestore` e `/interface ethernet print` para anotar la MAC de cada placa (`13-CORE-2-antes-del-restore.png`).
+2. Antes del reset apareció un `autosupout.rif` que nadie había generado: CORE-2 se había colgado y reiniciado solo durante la sesión (ver 8). Se diagnosticó antes de seguir, porque el reset borra el log (`13-CORE-2-diagnostico.png`).
+3. `/system reset-configuration no-defaults=yes skip-backup=yes`. Esta vez las placas quedaron en orden (`13-CORE-2-interfaces-tras-reset.png`) y el `.rsc` no tenía líneas `name=`.
+4. `/import file-name=CORE-2-20261022-preRestore.rsc` **se cortó** en la línea del template de OSPF: `auth-key must be specified` (`13-CORE-2-import-error-auth-key.png`). El export no trae la clave y RouterOS no acepta un template `auth=md5` sin clave, así que el script se detiene ahí: lo anterior quedó aplicado y lo posterior no (el router seguía llamándose `MikroTik`).
+5. Con un `/export` se vio exactamente qué faltaba y se cargó a mano: el template de OSPF **con** la clave desde KeePassXC, y las líneas que seguían (template del loopback, `/snmp`, identidad, bandwidth-server y mac-server). Después, `/ip dhcp-client remove [find]` y los usuarios `admin` y `monitor` con sus claves desde KeePassXC.
+6. Verificación (`13-CORE-2-restore-verificacion.png`): solo `admin` y `monitor`; 4 vecinos OSPF en Full; ping al EDGE 4 de 4; comunidad SNMP de solo lectura y `public` deshabilitada. El `/export` posterior es **idéntico** al de antes del restore salvo la hora (comparado con `diff`).
+
+**Procedimiento de restore actualizado.** El anterior decía "importar y después cargar las claves": sirvió en F1 (ISP-2, sin OSPF), pero en un router con OSPF MD5 el import se corta antes de llegar a ese paso. Queda así:
+
+1. `/export file=<ROUTER>-<fecha>-preRestore` e `/interface ethernet print` (MAC de cada placa).
+2. `/system reset-configuration no-defaults=yes skip-backup=yes`.
+3. Entrar como `admin` sin clave. Revisar el orden de las placas por MAC; si no coincide, renombrarlas por MAC pasando por nombres temporales.
+4. Si el `.rsc` tiene líneas `name=` en `/interface ethernet`, quitarlas antes de importar.
+5. `/import`. Si se corta en una línea que necesita una clave (OSPF MD5; en VRRP con autenticación no se probó, pero hay que esperar lo mismo), cargar esa línea a mano con la clave desde KeePassXC y después el resto del archivo. Otra opción es quitar esas líneas del `.rsc` antes de importar y cargarlas a mano al final.
+6. `/ip dhcp-client remove [find]` (el reset lo vuelve a crear).
+7. Recrear `admin` y `monitor` con las claves de KeePassXC.
+8. Verificar vecinos y sesiones, ping a los vecinos, y comparar el `/export` con el de antes usando `diff`.
+
 ### 6.3 Monitoreo
 
-> Qué se monitorea (enlaces, vecinos OSPF, sesiones BGP, VRRP) y con qué (SNMP, chequeos). (F4)
+**Qué se monitorea (F4).** Los 5 routers de la empresa: EDGE, CORE-1, CORE-2, DIST-1 y DIST-2. Los ISP representan a otras organizaciones y en una red real no se monitorean desde la empresa; de ellos solo se vigila que su loopback responda, que es la forma de ver si cada enlace de salida funciona. El backlog decía "los 7 routers" y el grupo acordó corregirlo a los 5 de la empresa.
 
-<!-- -->
+**Con qué:**
+
+| Herramienta | Dónde | Qué hace |
+|-------------|-------|----------|
+| SNMP de solo lectura | Los 5 routers de la empresa | `/snmp` habilitado con contacto y ubicación. Comunidad de solo lectura (`write-access=no`) que solo acepta consultas desde las redes de gestión (loopbacks y LAN SERVERS). La comunidad `public` de fábrica queda deshabilitada (es la entrada por defecto de RouterOS y no se puede borrar). El nombre de la comunidad funciona como una contraseña: está en KeePassXC y en el repo figura `<COMUNIDAD_SNMP>` (`04-*-snmp.png`) |
+| Netwatch | EDGE | Ping cada 10 s a los loopbacks de CORE-1, CORE-2, DIST-1, DIST-2, ISP-1 e ISP-2. Cada caída y cada vuelta queda en el log (`netwatch,info event down/up`). Antes de cargarlo se comprobó que registra los cambios sin necesidad de scripts, con un host inexistente (`05-EDGE-netwatch.png`) |
+
+**Chequeos de salud** (antes y después de cada drill):
+
+| Qué | Dónde | Comando | Esperado |
+|-----|-------|---------|----------|
+| VRRP | DIST-1 y DIST-2 | `/interface vrrp print` | DIST-1: `vrrp10` master, `vrrp20` backup. DIST-2: al revés |
+| OSPF | EDGE, CORE-1, CORE-2, DIST-1, DIST-2 | `/routing ospf neighbor print` | 2, 4, 4, 2 y 2 vecinos en Full |
+| BGP | EDGE | `/routing bgp session print` | 2 sesiones establecidas, `prefix-count=2` cada una |
+| Ruta por defecto | EDGE | `/ip route print where dst-address=0.0.0.0/0` | Dos por BGP, activa la de ISP-1 |
+| Conectividad | PC-USER y SRV | `ping 198.51.100.1`, `ping 198.51.100.2`, `ping 192.0.2.1` | Responden |
+| Monitoreo | EDGE | `/tool netwatch print` y `/log print where topics~"netwatch"` | Las 6 entradas `up`; en el log, las caídas y vueltas de cada drill |
+
+**Lo que registró netwatch durante los drills:** la caída y vuelta del loopback de CORE-1 en el drill 2 (A); en el corte silencioso del drill 2 (B), CORE-1, DIST-1 y DIST-2 a la vez (los DIST volvieron cuando reconvergió el EDGE y CORE-1 cuando reconvergió él mismo); ISP-1 en las dos variantes del drill 3. El corte con *Suspend* del drill 2 duró menos que su intervalo de 10 s y no quedó registrado.
+
+**Limitaciones:**
+- En el laboratorio no hay una estación que consulte SNMP (los hosts son VPCS). La verificación es `/snmp print` y `/snmp community print`.
+- El firewall del EDGE descarta lo que no está permitido en `input`, incluido SNMP (UDP 161). Cuando haya un servidor de monitoreo hay que agregar una regla que acepte SNMP desde la lista `gestion`.
+- Netwatch solo deja registro en el log. El cuelgue de CORE-2 durante la sesión (ver 8) recién se detectó horas después, al ver el archivo de diagnóstico. Mejora: que netwatch dispare un aviso (script o correo) y revisar su log después de cada drill.
 
 ---
 
@@ -1028,6 +1100,25 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 | `14-EDGE-firewall-stats.png` | Contadores de las 12 reglas del firewall |
 | `15-*-backup-binario.png` (7) | Export y backup binario post-F3 dentro de cada router |
 | `16-snapshot-F2F3.png` | Snapshot `F2F3` |
+
+**F4: `capturas/F4/`**
+
+| Archivos | Contenido |
+|----------|-----------|
+| `01-snapshot-pre-F4.png` | Snapshot `pre-F4` antes de tocar los routers |
+| `02-*-salud-inicial.png` (7) | Chequeo de salud inicial en EDGE, CORE-1, CORE-2, DIST-1, DIST-2, PC-USER y SRV |
+| `03-*.png` | Destino de prueba `192.0.2.1` en los dos ISP, sin anunciar por BGP, y ping desde PC-USER |
+| `04-*-snmp.png` (5), `05-EDGE-netwatch.png` | SNMP de solo lectura en los 5 routers de la empresa y netwatch en el EDGE |
+| `06-drill1-*.png` | Drill 1: VRRP, caída de DIST-1 |
+| `07-drill2-*.png` | Drill 2: OSPF, corte EDGE–CORE-1 (con interfaz, intento con *Suspend* y corte silencioso) |
+| `08-drill3-*.png` | Drill 3: BGP, caída de ISP-1 (con interfaz y corte silencioso) |
+| `09-drill4-*.png` | Drill 4: check-gateway |
+| `10-drill5-*.png` | Drill 5: load-sharing VRRP |
+| `11-*.png` | Prueba de clave incorrecta en OSPF (CORE-1) y BGP (EDGE), y vuelta a la clave real |
+| `12-*.png` | El failover no degradó la seguridad: MD5 de OSPF, autenticación VRRP, contadores del firewall y bloqueo desde ISP-1 |
+| `13-CORE-2-*.png` | Restore probado en CORE-2: estado previo, diagnóstico del cuelgue, reset, error del import y verificación |
+| `14-*-backup-binario.png` (7) | Export y backup binario post-F4 dentro de cada router |
+| `15-snapshot-F4.png` | Snapshot `F4` |
 
 ---
 
