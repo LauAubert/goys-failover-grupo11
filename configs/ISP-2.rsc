@@ -1,11 +1,12 @@
-# 2026-10-16 22:57:51 by RouterOS 7.21.5
+# 2026-10-22 22:56:05 by RouterOS 7.21.5
 # system id = Pxll50OAQqP
 #
 /interface bridge
+add comment="destino de prueba de los drills (no se anuncia por BGP)" name=internet-test
 add comment="loopback = router-id" name=loopback
 /interface ethernet
-set [ find default-name=ether2 ] disable-running-check=no name=ether1
-set [ find default-name=ether1 ] disable-running-check=no name=ether2
+set [ find default-name=ether1 ] disable-running-check=no
+set [ find default-name=ether2 ] disable-running-check=no
 set [ find default-name=ether3 ] disable-running-check=no
 set [ find default-name=ether4 ] disable-running-check=no
 /routing bgp instance
@@ -15,6 +16,7 @@ set discover-interface-list=none
 /ip address
 add address=203.0.113.5/30 comment="hacia EDGE" interface=ether1 network=203.0.113.4
 add address=198.51.100.2 interface=loopback network=198.51.100.2
+add address=192.0.2.1 interface=internet-test network=192.0.2.1
 /ip firewall address-list
 add address=198.51.100.2 comment="loopback ISP-2, se anuncia por BGP" list=anuncio-bgp
 /ip service

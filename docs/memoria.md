@@ -92,6 +92,8 @@ Otros problemas que tiene el diagrama y que quedan fuera del alcance del lab (vo
 | DIST-1 | — (OSPF) | `10.255.255.4/32` |
 | DIST-2 | — (OSPF) | `10.255.255.5/32` |
 
+**Destino de prueba de los drills (agregado en F4):** `192.0.2.1/32`, configurado **en los dos ISP** sobre una interfaz `internet-test` (bridge sin puertos, igual que el loopback). Representa un servidor de Internet que se alcanza por cualquiera de los dos proveedores. A diferencia de los loopbacks, **no se anuncia por BGP** (no está en la lista `anuncio-bgp`), así que el EDGE no tiene una ruta propia hacia ella y la alcanza solo por la ruta por defecto activa: el ping a `192.0.2.1` lo responde el ISP por el que sale la empresa. Hace falta para los drills 3 y 4: el ping a `198.51.100.1` o `198.51.100.2` no sirve para medir el cambio de proveedor, porque cada loopback se alcanza siempre por su propio ISP (ver 4.1). Es del mismo rango reservado para documentación (RFC 5737) que el resto del diseño.
+
 **Protocolos por enlace:**
 
 | Enlace | Protocolo |
