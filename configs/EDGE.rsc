@@ -1,13 +1,13 @@
-# 2026-10-16 23:09:31 by RouterOS 7.21.5
+# 2026-10-22 23:38:02 by RouterOS 7.21.5
 # system id = ZEighdbDNJC
 #
 /interface bridge
 add comment="loopback = router-id" name=loopback
 /interface ethernet
-set [ find default-name=ether2 ] disable-running-check=no name=ether1
-set [ find default-name=ether1 ] disable-running-check=no name=ether2
-set [ find default-name=ether3 ] disable-running-check=no
-set [ find default-name=ether4 ] disable-running-check=no
+set [ find default-name=ether3 ] disable-running-check=no name=ether1
+set [ find default-name=ether4 ] disable-running-check=no name=ether2
+set [ find default-name=ether1 ] disable-running-check=no name=ether3
+set [ find default-name=ether2 ] disable-running-check=no name=ether4
 /interface list
 add comment="enlaces hacia los ISP" name=WAN
 /routing bgp instance
@@ -16,6 +16,9 @@ add as=65000 comment="EDGE, router-id = loopback" name=bgp-as65000 router-id=10.
 add name=ospf-g11 originate-default=if-installed router-id=10.255.255.1
 /routing ospf area
 add instance=ospf-g11 name=backbone
+/snmp community
+set [ find default=yes ] disabled=yes
+add addresses=10.255.255.0/24,10.20.0.0/24 name=<COMUNIDAD_SNMP>
 /ip neighbor discovery-settings
 set discover-interface-list=none
 /interface list member
@@ -62,6 +65,8 @@ add chain=lans-a-isp comment="LAN SERVERS" rule="if (dst == 10.20.0.0/24) { acce
 /routing ospf interface-template
 add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5 hacia CORE" interfaces=ether3,ether4 type=ptp
 add area=backbone comment="loopback = router-id" interfaces=loopback passive
+/snmp
+set contact="Grupo 11" enabled=yes location=EDGE
 /system identity
 set name=EDGE
 /tool bandwidth-server
@@ -70,3 +75,10 @@ set enabled=no
 set allowed-interface-list=none
 /tool mac-server mac-winbox
 set allowed-interface-list=none
+/tool netwatch
+add comment=CORE-1 host=10.255.255.2 interval=10s type=simple
+add comment=CORE-2 host=10.255.255.3 interval=10s type=simple
+add comment=DIST-1 host=10.255.255.4 interval=10s type=simple
+add comment=DIST-2 host=10.255.255.5 interval=10s type=simple
+add comment=ISP-1 host=198.51.100.1 interval=10s type=simple
+add comment=ISP-2 host=198.51.100.2 interval=10s type=simple

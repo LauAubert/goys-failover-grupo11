@@ -1,11 +1,11 @@
-# 2026-10-16 22:32:35 by RouterOS 7.21.5
+# 2026-10-22 23:38:09 by RouterOS 7.21.5
 # system id = Om+hKlKu04D
 #
 /interface bridge
 add comment="loopback = router-id" name=loopback
 /interface ethernet
-set [ find default-name=ether2 ] disable-running-check=no name=ether1
-set [ find default-name=ether1 ] disable-running-check=no name=ether2
+set [ find default-name=ether1 ] disable-running-check=no
+set [ find default-name=ether2 ] disable-running-check=no
 set [ find default-name=ether3 ] disable-running-check=no
 set [ find default-name=ether4 ] disable-running-check=no
 /interface vrrp
@@ -15,6 +15,9 @@ add authentication=simple comment="SERVERS: DIST-1 backup" interface=ether4 name
 add name=ospf-g11 router-id=10.255.255.4
 /routing ospf area
 add instance=ospf-g11 name=backbone
+/snmp community
+set [ find default=yes ] disabled=yes
+add addresses=10.255.255.0/24,10.20.0.0/24 name=<COMUNIDAD_SNMP>
 /ip neighbor discovery-settings
 set discover-interface-list=none
 /ip address
@@ -37,6 +40,8 @@ set api-ssl disabled=yes
 add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5 hacia CORE" interfaces=ether1,ether2 type=ptp
 add area=backbone comment="loopback = router-id" interfaces=loopback passive
 add area=backbone comment="LANs USERS y SERVERS, pasivas" interfaces=ether3,ether4 passive
+/snmp
+set contact="Grupo 11" enabled=yes location=DIST-1
 /system identity
 set name=DIST-1
 /tool bandwidth-server
