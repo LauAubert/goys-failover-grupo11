@@ -361,8 +361,130 @@ set allowed-interface-list=none
 ```
 
 ### 3.3 EDGE
+
+Archivo: [`configs/EDGE.rsc`](../configs/EDGE.rsc), configuración vigente al cierre de F4 (el export post-F4 de `backups/2026-10-22/` es idéntico). Las claves no aparecen: RouterOS no las incluye en el `/export`; en los comentarios figuran los marcadores de 1.3.
+
 ```routeros
-<!-- config final -->
+# Interfaces virtuales: loopback (= router-id)
+/interface bridge
+add comment="loopback = router-id" name=loopback
+
+# Placas: RouterOS registra el orden en que las detectó en ese arranque. Las líneas con name= aparecen cuando no coincide con el de los adaptadores de GNS3 (sección 2); se quitan antes de un restore (6.2)
+/interface ethernet
+set [ find default-name=ether3 ] disable-running-check=no name=ether1
+set [ find default-name=ether4 ] disable-running-check=no name=ether2
+set [ find default-name=ether1 ] disable-running-check=no name=ether3
+set [ find default-name=ether2 ] disable-running-check=no name=ether4
+
+# Lista WAN: las dos interfaces hacia los ISP (la usa el firewall)
+/interface list
+add comment="enlaces hacia los ISP" name=WAN
+
+# BGP: AS 65000, router-id = loopback
+/routing bgp instance
+add as=65000 comment="EDGE, router-id = loopback" name=bgp-as65000 router-id=10.255.255.1
+
+# OSPF: router-id = loopback; inyecta la ruta por defecto en OSPF solo si la tiene instalada (la que aprende por BGP)
+/routing ospf instance
+add name=ospf-g11 originate-default=if-installed router-id=10.255.255.1
+
+# Área 0 (backbone)
+/routing ospf area
+add instance=ospf-g11 name=backbone
+
+# SNMP de solo lectura (F4): la comunidad de fábrica (public) queda deshabilitada y la nueva solo acepta consultas desde las redes de gestión. El nombre de la comunidad es un secreto (KeePassXC)
+/snmp community
+set [ find default=yes ] disabled=yes
+add addresses=10.255.255.0/24,10.20.0.0/24 name=<COMUNIDAD_SNMP>
+
+# Hardening: sin descubrimiento de vecinos
+/ip neighbor discovery-settings
+set discover-interface-list=none
+
+# Miembros de la lista WAN
+/interface list member
+add interface=ether1 list=WAN
+add interface=ether2 list=WAN
+
+# Direcciones: enlaces hacia ISP-1, ISP-2, CORE-1 y CORE-2, y loopback
+/ip address
+add address=203.0.113.2/30 comment="hacia ISP-1" interface=ether1 network=203.0.113.0
+add address=203.0.113.6/30 comment="hacia ISP-2" interface=ether2 network=203.0.113.4
+add address=10.0.0.1/30 comment="hacia CORE-1" interface=ether3 network=10.0.0.0
+add address=10.0.0.5/30 comment="hacia CORE-2" interface=ether4 network=10.0.0.4
+add address=10.255.255.1 interface=loopback network=10.255.255.1
+
+# Listas del firewall: redes de gestión (loopbacks y LAN SERVERS) y LANs de la empresa
+/ip firewall address-list
+add address=10.255.255.0/24 comment=loopbacks list=gestion
+add address=10.20.0.0/24 comment="LAN SERVERS" list=gestion
+add address=10.10.0.0/24 comment="LAN USERS" list=lans
+add address=10.20.0.0/24 comment="LAN SERVERS" list=lans
+
+# Firewall (F3, política 1.3). input protege al router: gestión solo desde la lista gestion, BGP solo desde cada ISP, OSPF solo desde los enlaces internos, ICMP, y drop del resto. forward deja salir a las LAN y descarta conexiones nuevas que entran desde los ISP
+/ip firewall filter
+add action=accept chain=input comment="input: conexiones en curso" connection-state=established,related
+add action=drop chain=input comment="input: invalidas" connection-state=invalid
+add action=accept chain=input comment="input: SSH y Winbox solo desde gestion" dst-port=22,8291 protocol=tcp src-address-list=gestion
+add action=accept chain=input comment="input: BGP desde ISP-1" dst-port=179 protocol=tcp src-address=203.0.113.1
+add action=accept chain=input comment="input: BGP desde ISP-2" dst-port=179 protocol=tcp src-address=203.0.113.5
+add action=accept chain=input comment="input: OSPF desde enlaces internos" protocol=ospf src-address=10.0.0.0/24
+add action=accept chain=input comment="input: ICMP" protocol=icmp
+add action=drop chain=input comment="input: todo lo demas"
+add action=accept chain=forward comment="forward: conexiones en curso" connection-state=established,related
+add action=drop chain=forward comment="forward: invalidas" connection-state=invalid
+add action=drop chain=forward comment="forward: nada nuevo desde los ISP hacia adentro" connection-state=new in-interface-list=WAN
+add action=accept chain=forward comment="forward: salida desde las LAN" src-address-list=lans
+
+# Hardening: servicios en texto plano y API apagados; SSH y Winbox solo desde las redes de gestión
+/ip service
+set ftp disabled=yes
+set ssh address=10.255.255.0/24,10.20.0.0/24
+set telnet disabled=yes
+set www disabled=yes
+set winbox address=10.255.255.0/24,10.20.0.0/24
+set api disabled=yes
+set api-ssl disabled=yes
+
+# eBGP con cada ISP, autenticación TCP-MD5 (<CLAVE_BGP_ISP1>, <CLAVE_BGP_ISP2>; no aparecen en el export). Redistribuye OSPF hacia BGP y el filtro lans-a-isp deja salir solo las dos LANs
+/routing bgp connection
+add as=65000 comment="eBGP con ISP-1" instance=bgp-as65000 local.role=ebgp name=hacia-ISP-1 output.filter-chain=lans-a-isp .redistribute=ospf remote.address=203.0.113.1 .as=65001
+add as=65000 comment="eBGP con ISP-2" instance=bgp-as65000 local.role=ebgp name=hacia-ISP-2 output.filter-chain=lans-a-isp .redistribute=ospf remote.address=203.0.113.5 .as=65002
+
+# Filtro de salida hacia los ISP: acepta solo 10.10.0.0/24 y 10.20.0.0/24; el resto se rechaza (acción por defecto de la cadena)
+/routing filter rule
+add chain=lans-a-isp comment="LAN USERS" rule="if (dst == 10.10.0.0/24) { accept }"
+add chain=lans-a-isp comment="LAN SERVERS" rule="if (dst == 10.20.0.0/24) { accept }"
+
+# Interfaces OSPF: enlaces hacia los CORE punto a punto con MD5 (<CLAVE_OSPF>, no aparece en el export); loopback pasiva
+/routing ospf interface-template
+add area=backbone auth=md5 auth-id=1 comment="enlaces P2P con MD5 hacia CORE" interfaces=ether3,ether4 type=ptp
+add area=backbone comment="loopback = router-id" interfaces=loopback passive
+
+# SNMP habilitado, con contacto y ubicación
+/snmp
+set contact="Grupo 11" enabled=yes location=EDGE
+
+# Nombre del router
+/system identity
+set name=EDGE
+
+# Hardening: bandwidth-server y acceso por MAC (MAC-Telnet y MAC-Winbox) apagados
+/tool bandwidth-server
+set enabled=no
+/tool mac-server
+set allowed-interface-list=none
+/tool mac-server mac-winbox
+set allowed-interface-list=none
+
+# Monitoreo (F4): ping cada 10 s a los loopbacks internos y a los de los ISP; cada caída y cada vuelta queda en el log
+/tool netwatch
+add comment=CORE-1 host=10.255.255.2 interval=10s type=simple
+add comment=CORE-2 host=10.255.255.3 interval=10s type=simple
+add comment=DIST-1 host=10.255.255.4 interval=10s type=simple
+add comment=DIST-2 host=10.255.255.5 interval=10s type=simple
+add comment=ISP-1 host=198.51.100.1 interval=10s type=simple
+add comment=ISP-2 host=198.51.100.2 interval=10s type=simple
 ```
 
 ### 3.4 CORE-1
@@ -609,7 +731,7 @@ save
 |-----------|-----------------|---------------------------------------------|
 | Hardening (usuarios/servicios) | Los 7 routers (F1): clave de `admin`, usuario `monitor` (grupo `read`), servicios `telnet`, `ftp`, `www`, `www-ssl`, `api` y `api-ssl` deshabilitados, `ssh` y `winbox` restringidos a las redes de gestión, MAC server, descubrimiento de vecinos y bandwidth-server apagados, cliente DHCP de fábrica eliminado | En cada router: `/user print` (solo `admin` y `monitor`), `/ip service print` (servicios con `X`, y `address` restringido en `ssh` y `winbox`) e `/ip dhcp-client print` vacío. Capturas `*-hardening.png` y `*-sin-dhcp-client.png` en `capturas/F1/`; los `.rsc` de `configs/` lo reflejan |
 | OSPF MD5 | Los 7 enlaces internos (F2): `auth=md5 auth-id=1` con `<CLAVE_OSPF>` en las interfaces activas de EDGE (`ether3`, `ether4`), CORE-1 y CORE-2 (`ether1`–`ether4`) y DIST-1 y DIST-2 (`ether1`, `ether2`), todas en modo `ptp`. Loopbacks y LANs como interfaces pasivas: se anuncian, pero no forman vecinos | Las 7 adyacencias llegan a Full con la misma clave en las dos puntas (capturas `04-*-ospf-vecinos.png` en `capturas/F2/`). `/routing ospf interface-template print` muestra `auth=md5 auth-id=1` sin mostrar la clave, y el `/export` no la incluye. **Prueba con clave incorrecta (F4):** en CORE-1 se cambió la clave del template de sus 4 enlaces por una incorrecta (`clave-incorrecta-F4`). Desde ese momento el log registra `authentication failed ... md5 mismatch` de los 4 vecinos y las 4 adyacencias caen por `timeout` al vencer el *dead interval* (unos 30 s después). La red siguió funcionando por CORE-2 (PC-USER llega a `198.51.100.1`). Con la clave real, cargada desde KeePassXC, los 4 vecinos vuelven a Full (`11-CORE-1-ospf-*.png` y `11-PC-USER-ping-sin-CORE-1.png` en `capturas/F4/`) |
-| BGP TCP-MD5 | Sesión EDGE ↔ ISP-1 con `<CLAVE_BGP_ISP1>` y EDGE ↔ ISP-2 con `<CLAVE_BGP_ISP2>`, configuradas en las dos puntas (`tcp-md5-key` en `/routing bgp connection`) (F3). En RouterOS 7.21.5 el router-id va en `/routing bgp instance` y la conexión la referencia | 2 sesiones establecidas en EDGE y 1 en cada ISP (`01-EDGE-bgp-sesiones.png`, `03-ISP-*-bgp-rutas.png` en `capturas/F3/`). Siguen establecidas después de aplicar el firewall, sin reinicios (`09-EDGE-bgp-despues-firewall.png`). La clave no aparece en `print` ni en el `/export`. La prueba con clave incorrecta queda para F4 |
+| BGP TCP-MD5 | Sesión EDGE ↔ ISP-1 con `<CLAVE_BGP_ISP1>` y EDGE ↔ ISP-2 con `<CLAVE_BGP_ISP2>`, configuradas en las dos puntas (`tcp-md5-key` en `/routing bgp connection`) (F3). En RouterOS 7.21.5 el router-id va en `/routing bgp instance` y la conexión la referencia | 2 sesiones establecidas en EDGE y 1 en cada ISP (`01-EDGE-bgp-sesiones.png`, `03-ISP-*-bgp-rutas.png` en `capturas/F3/`). Siguen establecidas después de aplicar el firewall, sin reinicios (`09-EDGE-bgp-despues-firewall.png`). La clave no aparece en `print` ni en el `/export`. **Prueba con clave incorrecta (F4):** con `tcp-md5-key` incorrecta en la conexión `hacia-ISP-1` del EDGE, la sesión cae en el momento (modificar la conexión la reinicia), queda `Idle` con `prefix-count=0` y no vuelve a establecerse; la salida pasa a ISP-2. Con la clave real, desde KeePassXC, la sesión vuelve a `E` y recupera sus 2 prefijos (`11-EDGE-bgp-*.png` en `capturas/F4/`). Al reponerla, el primer pegado dejó la consola esperando el cierre de unas comillas; se canceló con Ctrl+C y se volvió a pegar |
 | VRRP auth | Grupos 10 (USERS, `ether3`) y 20 (SERVERS, `ether4`) en DIST-1 y DIST-2 (F2): `version=2`, `authentication=simple`, claves `<CLAVE_VRRP_10>` y `<CLAVE_VRRP_20>`. Se fija la versión 2 porque RouterOS crea los grupos en versión 3 por defecto, y según su documentación la autenticación está obsoleta en VRRP v3 | Un solo master por grupo, con la misma clave en los dos routers: DIST-1 master del 10 y DIST-2 master del 20, los dos con `authentication=simple` (`02-DIST-*-vrrp.png` en `capturas/F2/`). Si las claves o las versiones no coincidieran, cada router se creería master. Los gateways virtuales responden (`03-*-ping-gateway.png`) |
 | Firewall/ACL (edge) | EDGE (F3), según 1.3: listas `gestion` (loopbacks y LAN SERVERS) y `lans`, lista de interfaces `WAN` (`ether1`, `ether2`); 8 reglas en `input` (conexiones en curso, inválidas, SSH/Winbox solo desde `gestion`, BGP solo desde cada ISP, OSPF solo desde `10.0.0.0/24`, ICMP, drop del resto) y 4 en `forward` (conexiones en curso, inválidas, drop de conexiones nuevas desde `WAN`, salida desde `lans`). El ICMP se acepta sin límite: la política dice "ICMP limitado", pero se dejó sin `limit=` porque el ping se usa en todas las verificaciones y en los drills de F4 | PC-USER → ISP-1 responde (`10-…`); ISP-1 → `10.10.0.100` no responde, y la regla de forward "nada nuevo desde los ISP" contó esos 4 paquetes (`11-…`, `14-EDGE-firewall-stats.png`); ISP-1 → EDGE por ICMP responde (`12-…`); SSH de ISP-1 al EDGE no llega a pedir contraseña, y el contador de la regla de drop final pasó de 0 a 6 paquetes de 60 bytes, los intentos de conexión descartados (`13-…`). BGP y OSPF siguen arriba (`09-…`) |
 
