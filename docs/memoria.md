@@ -1124,9 +1124,51 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 
 ## 8. Conclusiones y lecciones aprendidas
 
-> Post-mortem global: qué salió bien, qué fue difícil, qué harían distinto.
+**Qué salió bien.** La red sobrevivió a todas las fallas provocadas en F4: caída de un gateway, corte de un enlace interno, caída de un proveedor y caída del siguiente salto, sin intervención manual. Cada mecanismo hizo lo que el diseño de F0 prometía: VRRP en distribución, OSPF con el cable core–core y eBGP con dos proveedores. La seguridad quedó intacta después de los drills, y con una clave incorrecta OSPF y BGP no levantan. La configuración final coincide línea por línea con lo versionado, y el restore de un router con OSPF MD5 quedó probado.
 
-<!-- -->
+**Tiempos medidos y por qué cada mecanismo tarda lo que tarda:**
+
+| Mecanismo | Falla | Tiempo sin servicio | De qué depende |
+|-----------|-------|:-------------------:|----------------|
+| VRRP (drill 1) | Cae la pata LAN del master | ~16 s | *Master down interval*: 3 anuncios perdidos (intervalo 1 s) + *skew* ≈ 3,6 s teórico. La diferencia con lo medido no la explicamos |
+| VRRP (drill 5) | Ídem, en el otro DIST | ~4 s | Ídem, más cerca de la teoría |
+| OSPF (drill 2 A) | Se apaga la interfaz | ~2 s | El router ve caer su interfaz y recalcula al instante (SPF) |
+| OSPF (drill 2 B) | El cable deja de pasar tráfico | ~35 s | *Dead interval* de 40 s desde el último *hello* (cada 10 s) + instalación de la ruta |
+| BGP (drill 3 A) | Se apaga la interfaz hacia el ISP | ~2 s | No lo hace BGP: la ruta queda inactiva porque su *gateway* quedó en una interfaz apagada |
+| BGP (drill 3 B) | El enlace con el ISP deja de pasar tráfico | ~160 s | *Hold time* de 180 s desde el último *keepalive* (cada 60 s) |
+| check-gateway (drill 4) | El siguiente salto deja de responder | ~17 s | Dos pings fallidos al *gateway* (uno cada 10 s) |
+
+La conclusión central: **lo que define el tiempo de failover es cómo se detecta la falla.** Si la falla apaga una interfaz, todo converge en segundos. Si es silenciosa, cada protocolo depende de su temporizador: OSPF espera 40 s y BGP hasta 3 minutos. BGP es el más lento porque une organizaciones distintas y cerrar una sesión por una pérdida corta obliga a retirar y volver a anunciar todas las rutas; por eso sus valores por defecto son conservadores. En una red real se complementa con detección rápida (BFD, temporizadores acordados con el proveedor o chequeos del siguiente salto como el del drill 4).
+
+**Incidentes y lo que aprendimos de cada uno:**
+
+| Fase | Incidente | Qué cambió en la operación |
+|:----:|-----------|----------------------------|
+| F1 | El orden en que RouterOS detecta las placas no coincide con el de GNS3: en ISP-1 la dirección quedó en un puerto sin cable | Chequeo de MAC por interfaz antes de configurar cada router (sección 2) |
+| F1 | El primer restore (ISP-2) restauró el texto pero dejó al router aislado, por el mismo problema de placas | Un restore no se da por probado hasta que el ping responde; fijar las placas por MAC antes de importar (6.2) |
+| F2 | El orden de las placas cambia en cada arranque; los exports traen líneas `name=` | Se quitan esas líneas del `.rsc` antes de un restore (6.2) |
+| F2 y F4 | Exports y backups guardados con el nombre de otro router | En F4 se adoptó un export que toma el nombre de la identidad del router |
+| F3 | El host no llegaba a ISP-2: cada ISP solo mandaba la ruta por defecto | Cada ISP anuncia también su loopback (4.1) |
+| F4 | Se perdió la contraseña maestra de la base de KeePassXC | Las claves de OSPF, BGP y VRRP se recuperaron de los routers (con la sesión de `admin` abierta) y se pasaron a una base nueva, sin pasar por el chat ni por capturas. La contraseña maestra la tienen al menos dos integrantes y se prueba al cierre de cada sesión |
+| F4 | CORE-2 se colgó y se reinició solo (`kernel failure`, archivo `autosupout.rif`); se detectó horas después | La configuración sobrevivió y la red siguió por CORE-1. Causa no confirmada. Al cierre de cada sesión se revisa el `uptime` y la presencia de `supout` en los 7 routers, y el log de netwatch después de cada drill |
+| F4 | Los relojes de los routers no coinciden entre sí y se atrasaron más de 2 h durante la sesión (sin NTP) | Los tiempos se miden con ping y cronómetro; las horas del log solo se comparan dentro de un mismo router. Mejora: NTP |
+| F4 | El *Suspend* de GNS3 no produce un corte silencioso (baja la señal de la placa) | Los cortes silenciosos se hacen con un filtro de pérdida del 100 % en el cable |
+| F4 | El import de un router con OSPF MD5 se corta (`auth-key must be specified`) | Procedimiento de restore actualizado (6.2) |
+| F4 | Errores de pegado en la consola (una ruta duplicada en el drill 4, comillas sin cerrar al reponer una clave) | Pegar de a un comando y revisar con `print` antes de seguir; claves solo con letras y números |
+
+**Qué haríamos distinto:**
+- **NTP en todos los routers** desde F1, para poder seguir un mismo evento en los logs de varios equipos.
+- **Detección rápida de fallas:** BFD o temporizadores más cortos para OSPF y BGP.
+- **Monitoreo con avisos**, no solo registro en el log.
+- **Probar `virtio-net-pci`** en vez de `e1000` para ver si se resuelve el desorden de las placas (quedó pendiente en el backlog).
+- **Repetir cada drill varias veces:** con una sola medición por caso, diferencias como la del drill 1 contra el 5 no se pueden explicar.
+- **Custodia compartida de la contraseña maestra** del gestor de secretos desde el principio.
+
+**Lecciones por área** (redactado por R5 con lo que aportó cada rol):
+- **Edge / WAN (R1):** el multi-homing protege la salida, pero el tiempo de failover ante un corte silencioso depende de los temporizadores de BGP. El firewall no interfirió con ningún failover y siguió bloqueando lo que debía.
+- **Proveedores y core (R2 + R3):** el cable core–core es lo que le da a CORE-1 un camino de respaldo. El destino de prueba en los ISP fue necesario para poder medir el cambio de proveedor de punta a punta.
+- **Distribución (R4):** VRRP con los masters cruzados mantiene a los dos DIST trabajando. Su límite es que solo ve la caída del router o de su pata hacia la LAN.
+- **Operación (R5):** sin el chequeo de salud antes y después de cada drill, el cuelgue de CORE-2 y el atraso de los relojes no se hubieran detectado. La evidencia (capturas numeradas, exports comparados con `diff`) permitió demostrar que la red quedó exactamente como estaba.
 
 ---
 
@@ -1137,6 +1179,9 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 - Doyle & Carroll (2005). *Routing TCP/IP, Vol. I* (IGP, FHRP)
 - MikroTik Wiki — VRRP, BGP, OSPF, check-gateway, Securing your router
 - Análisis del diagrama viral (`analisis.md`, material de cátedra)
+- MikroTik CHR 7.21.5 — Ayuda oficial de RouterOS 7 (https://help.mikrotik.com/docs/), páginas usadas: VRRP, OSPF, BGP, Route Selection and Filters, Filter (firewall), IP Routing (`check-gateway`), Configuration Management (`/export`, `/import`, `reset-configuration`), Backup, SNMP, Netwatch, Torch
+- GNS3 — Documentación (https://docs.gns3.com/): snapshots y filtros de paquetes en los enlaces
+- RFC 5880 — Bidirectional Forwarding Detection (BFD), citado como mejora en la sección 8
 
 ---
 
@@ -1153,7 +1198,7 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 - [x] VRRP operativo (2 grupos, load-sharing)
 - [x] OSPF área 0 con adyacencias (incluido core–core)
 - [x] BGP eBGP ×2 establecido (multi-homing)
-- [ ] Los 5 drills ejecutados y documentados (runbook + post-mortem + tiempo)
+- [x] Los 5 drills ejecutados y documentados (runbook + post-mortem + tiempo)
 
 ### Seguridad
 - [x] Hardening aplicado (password, usuario mínimo, servicios apagados)
@@ -1161,17 +1206,17 @@ Procedimiento de restore que queda para esta plataforma: reset → verificar el 
 - [x] BGP TCP-MD5 funcionando
 - [x] VRRP auth funcionando
 - [x] Firewall edge aplicado
-- [ ] Prueba con clave incorrecta → debe **fallar** (documentado)
+- [x] Prueba con clave incorrecta → debe **fallar** (documentado)
 
 ### Operación
 - [ ] Change log completo (refleja los commits del repo)
-- [ ] Backups con restore probado
-- [ ] Monitoreo habilitado y documentado
-- [ ] Runbook por drill + post-mortem global
+- [x] Backups con restore probado
+- [x] Monitoreo habilitado y documentado
+- [x] Runbook por drill + post-mortem global
 
 ### Entrega
-- [ ] Memoria completa (todas las secciones de esta plantilla)
+- [x] Memoria completa (todas las secciones de esta plantilla)
 - [x] Repo git con la estructura correcta y commits por rol
 - [ ] `backlog.md` con todas las tareas en "done"
-- [ ] Capturas en la carpeta `capturas/`
+- [x] Capturas en la carpeta `capturas/`
 - [ ] Cada integrante puede defender su parte **y** una parte ajena
