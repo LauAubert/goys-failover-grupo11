@@ -939,6 +939,26 @@ Runbook [`runbooks/drill-5-load-sharing.md`](../runbooks/drill-5-load-sharing.md
 | `2026-10-16` | R1 — Santiago Natalichio Bestosini | `eee3812` `feat(firewall): filtro input y forward en EDGE` | Epic F3 — Firewall edge (filtro de entrada + plano de gestión protegido) | `git revert eee3812`; en el router, `/ip firewall filter remove [find]` quita las reglas (las listas no filtran por sí solas) |
 | `2026-10-16` | R5 — Lautaro Aubert | `fd193e4` `ops(backup): backup post-F3 y evidencia de BGP y firewall` | Epic F3 — Salida a "Internet", verificación del firewall, backup post-F3 y capturas | `git revert fd193e4` |
 | `2026-10-16` | R5 — Lautaro Aubert | `a1b7aa3` `docs(memoria): verificacion y seguridad de F2 y F3` | Epics F2 y F3 — Verificación (4.1), seguridad aplicada (5), backups (6.2) y capturas (7) | `git revert a1b7aa3` |
+| `2026-10-16` | R5 — Lautaro Aubert | `94f8778` `ops(changelog): registro F2 y F3 y backlog actualizado` | Epics F2 y F3 — Change log y backlog | `git revert 94f8778` |
+| `2026-10-16` | R5 — Lautaro Aubert | `61e5369` `docs(repo): actualizo estado de fases en el README` | Repositorio git — tabla de estado del README | `git revert 61e5369` |
+| `2026-10-16` | R1 — Santiago Natalichio Bestosini | `eade79f` `fix(changelog): completo fechas y hashes de F2 y F3` | Change log — filas de F2 y F3 sin fecha ni hash | `git revert eade79f` |
+| `2026-10-22/23` | R1 — Santiago Natalichio Bestosini (ejecutó) | Sin commit: cambios temporales de los drills 2 a 4 (interfaces deshabilitadas, filtros de pérdida en los cables de GNS3, rutas estáticas con `check-gateway` en el EDGE) | Epic F4 — Drills (dirigidos por el dueño de cada uno, ver runbooks) | Se revirtieron dentro de cada drill; el export post-F4 confirma que no quedó ninguno |
+| `2026-10-22/23` | R3 — Tomás Martin / R1 — Santiago Natalichio Bestosini | Sin commit: clave incorrecta en el template OSPF de CORE-1 y en `hacia-ISP-1` del EDGE | Epic F4 — Verificación de seguridad (la autenticación debe fallar) | Se volvió a la clave real desde KeePassXC en el mismo momento (sección 5) |
+| `2026-10-22/23` | R5 — Lautaro Aubert (dirigió) | Sin commit: restore de CORE-2 (reset, import y carga manual de lo que el import no aplicó) | Epic F4 — Restore probado (política 1.4) | La configuración resultante es idéntica a `configs/CORE-2.rsc` (6.2) |
+| `2026-10-23` | R2 — Tomás Martin | `3fc854e` `feat(isp): destino de prueba 192.0.2.1 en ISP-1 e ISP-2 para los drills` | Epic F4 — Destino de prueba para los drills 3 y 4 (memoria 1.2) | `git revert 3fc854e`; en cada ISP, `/ip address remove [find address~"192.0.2.1"]` e `/interface bridge remove [find name=internet-test]` |
+| `2026-10-23` | R5 — Lautaro Aubert | `795e18b` `docs(runbook): plantilla de runbook para los drills` | Epic F4 — Runbooks | `git revert 795e18b` |
+| `2026-10-23` | R5 — Lautaro Aubert | `0fa6cec` `feat(operacion): snmp de solo lectura y netwatch` | Epic F4 — Monitoreo (SNMP + chequeos) | `git revert 0fa6cec`; en los routers, `/snmp community remove [find default=no]`, `/snmp community set [find default=yes] disabled=no` y `/snmp set enabled=no`; en el EDGE, `/tool netwatch remove [find]` |
+| `2026-10-23` | R4 — Juan Bautista Cuenca | `fcceb07` `docs(runbook): drill 1, caida del gateway VRRP` | Epic F4 — Drill 1 | `git revert fcceb07` |
+| `2026-10-23` | R4 — Juan Bautista Cuenca | `168b9fa` `docs(runbook): drill 2, corte EDGE-CORE-1 y reconvergencia OSPF` | Epic F4 — Drill 2 (operación de los CORE por alguien distinto de R3) | `git revert 168b9fa` |
+| `2026-10-23` | R1 — Santiago Natalichio Bestosini | `9b8e20b` `docs(runbook): drill 3, caida de ISP-1 y conmutacion BGP` | Epic F4 — Drill 3 (rotación R1 → ISP) | `git revert 9b8e20b` |
+| `2026-10-23` | R2 — Tomás Martin | `49cfb1d` `docs(runbook): drill 4, failover estatico con check-gateway` | Epic F4 — Drill 4 (rotación R2 → EDGE) | `git revert 49cfb1d` |
+| `2026-10-23` | R4 — Juan Bautista Cuenca | `2a2d1f0` `docs(runbook): drill 5, load-sharing VRRP` | Epic F4 — Drill 5 | `git revert 2a2d1f0` |
+| `2026-10-23` | R5 — Lautaro Aubert | `679dd71` `ops(backup): backup post-F4 y evidencia de drills, seguridad y restore` | Epic F4 — Backup post-F4, restore probado y capturas | `git revert 679dd71` |
+| `2026-10-23` | R2/R3 — Tomás Martin | `491d86e` `docs(memoria): configuracion final de ISP y CORE y prueba de clave OSPF` | Epic F5 — Memoria (3.1, 3.2, 3.4, 3.5 y fila OSPF de la sección 5) | `git revert 491d86e` |
+| `2026-10-23` | R1 — Santiago Natalichio Bestosini | `a489df8` `docs(memoria): configuracion final de EDGE y prueba de clave BGP` | Epic F5 — Memoria (3.3 y fila BGP de la sección 5) | `git revert a489df8` |
+| `2026-10-23` | R4 — Juan Bautista Cuenca | `beb2c57` `docs(memoria): configuracion final de DIST-1 y DIST-2 y verificacion de VRRP` | Epic F5 — Memoria (3.6, 3.7 y fila VRRP de la sección 5) | `git revert beb2c57` |
+| `2026-10-23` | R5 — Lautaro Aubert | `26a2339` `docs(memoria): drills, monitoreo y restore de F4` | Epic F5 — Memoria (4.2, 5, 6.2, 6.3 y 7) | `git revert 26a2339` |
+| `2026-10-23` | R5 — Lautaro Aubert | `5c3d6b1` `docs(memoria): conclusiones, referencias y checklist final` | Epic F5 — Memoria (8, 9 y 10) | `git revert 5c3d6b1` |
 
 > Un commit no puede contener su propio hash: cada commit `ops(changelog): …` (R5) completa las filas de su fase y queda registrado en la actualización siguiente.
 
@@ -1209,7 +1229,7 @@ La conclusión central: **lo que define el tiempo de failover es cómo se detect
 - [x] Prueba con clave incorrecta → debe **fallar** (documentado)
 
 ### Operación
-- [ ] Change log completo (refleja los commits del repo)
+- [x] Change log completo (refleja los commits del repo)
 - [x] Backups con restore probado
 - [x] Monitoreo habilitado y documentado
 - [x] Runbook por drill + post-mortem global

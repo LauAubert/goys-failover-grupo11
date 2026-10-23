@@ -4,7 +4,7 @@
 
 ## Leyenda de estado
 
-- `[ ]` pendiente · `[~]` en curso · `[x]` hecho
+- `[ ]` pendiente · `[~]` en curso · `[x]` hecho · `~~tachada~~` descartada por el grupo (con el motivo)
 - Cada tarea lleva **dueño** (rol): `[R1]` … `[R5]`.
 - **"Hecho" = criterio de aceptación cumplido** (ver spec, sección 6). No "más o menos".
 
@@ -52,7 +52,7 @@
 ## Epic F1 — Topología + hardening + backup · *vence vie 9/10*
 
 ### Despliegue (7 CHR + 2 switches + 2 hosts)
-- [ ] [R1..R5] verificar GNS3 + imagen CHR instalados en cada laptop
+- ~~[R1..R5] verificar GNS3 + imagen CHR instalados en cada laptop~~ — descartada por el grupo el 23/10: el laboratorio corrió siempre en la PC del anfitrión (R1) y el resto participó dirigiendo cada paso en la llamada; no se usó en ninguna fase
 - [x] [R5] armar el proyecto GNS3 `Failover-G11` desde cero (7 CHR + 2 switches + 2 VPCS) y verificar 11 nodos / 15 enlaces
 - [x] [R5] contrastar numeración `etherN` del proyecto con la tabla IPAM; corregir tabla si difiere (change log) — sin diferencias, la tabla no cambió
 
@@ -87,7 +87,7 @@
 ## Epic F2 — VRRP + OSPF · *vence vie 16/10*
 
 ### Pendientes que vienen de F1
-- [ ] [R1] probar en un nodo suelto si cambiar las placas de los CHR de `e1000` a `virtio-net-pci` evita el desorden de interfaces (memoria, sección 2)
+- [ ] [R1] probar en un nodo suelto si cambiar las placas de los CHR de `e1000` a `virtio-net-pci` evita el desorden de interfaces (memoria, sección 2) — no se hizo en F4 por tiempo; queda como mejora (memoria 8)
 
 ### VRRP (2 grupos, load-sharing, auth)
 - [x] [R4] configurar VRRP vrid 10 en DIST-1 (master, priority 200) y DIST-2 (backup, 100)
@@ -128,41 +128,48 @@
 
 ---
 
-## Epic F4 — Drills + monitoreo · *vence mar 20/10*
+## Epic F4 — Drills + monitoreo · *vence mar 20/10* · entregada con F5 el vie 23/10 (ver README)
 
 > Rotación obligatoria R1 ↔ R2 en esta fase.
 
 ### Los 5 drills (runbook + post-mortem + tiempo)
-- [ ] [R5] escribir plantilla de runbook (detección → respuesta → recuperación → post-mortem) en `runbooks/`
-- [ ] [R4]+[R5] Drill 1 VRRP: apagar DIST-1, medir tiempo, runbook
-- [ ] [R3]+[R5] Drill 2 OSPF: cortar EDGE↔CORE-1, medir reconvergencia, runbook
-- [ ] [R1..R5] definir qué otro integrante opera CORE-1/CORE-2 junto a R3 en el drill 2 (observación del docente en F0)
-- [ ] [R2→R1]+[R5] Drill 3 BGP: cortar ISP-1↔EDGE, medir conmutación, runbook
-- [ ] [R1→R2]+[R5] Drill 4 check-gateway: failover estático, runbook
-- [ ] [R4]+[R5] Drill 5 load-sharing: demostrar ambos DIST activos, runbook
+- [x] [R5] escribir plantilla de runbook (detección → respuesta → recuperación → post-mortem) en `runbooks/`
+- [x] [R4]+[R5] Drill 1 VRRP: apagar DIST-1, medir tiempo, runbook
+- [x] [R3]+[R5] Drill 2 OSPF: cortar EDGE↔CORE-1, medir reconvergencia, runbook (corte con interfaz y corte silencioso)
+- [x] [R1..R5] definir qué otro integrante opera CORE-1/CORE-2 junto a R3 en el drill 2 (observación del docente en F0) — R4 dirigió el drill 2 con R3 al lado, y R5 el restore de CORE-2
+- [x] [R2→R1]+[R5] Drill 3 BGP: cortar ISP-1↔EDGE, medir conmutación, runbook (corte con interfaz y corte silencioso)
+- [x] [R1→R2]+[R5] Drill 4 check-gateway: failover estático, runbook
+- [x] [R4]+[R5] Drill 5 load-sharing: demostrar ambos DIST activos, runbook
 
 ### Monitoreo (SNMP/chequeos)
-- [ ] [R5] habilitar SNMP (comunidad de solo lectura) en los 7 routers y documentar
-- [ ] [R5] definir chequeos (vecinos OSPF, sesiones BGP, estado VRRP)
+- [x] [R5] habilitar SNMP (comunidad de solo lectura) en los 5 routers de la empresa y documentar — corregido de "los 7 routers": los ISP representan a otras organizaciones (memoria 6.3)
+- [x] [R5] definir chequeos (vecinos OSPF, sesiones BGP, estado VRRP) — más netwatch en el EDGE (memoria 6.3)
 
 ### Verificación de seguridad (clave incorrecta falla)
-- [ ] [R3] cambiar clave OSPF en un extremo → adyacencia cae; capturar y revertir
-- [ ] [R1] cambiar clave BGP en un extremo → sesión cae; capturar y revertir
-- [ ] [R5] backup post-F4 + change log
+- [x] [R3] cambiar clave OSPF en un extremo → adyacencia cae; capturar y revertir
+- [x] [R1] cambiar clave BGP en un extremo → sesión cae; capturar y revertir
+- [x] [R5] backup post-F4 + change log
 
 ### Restore probado (política 1.4, una vez en F4)
-- [ ] [R5] probar restore de un router con config de F2/F3: fijar placas por MAC, quitar del `.rsc` las líneas `name=` de `/interface ethernet`, importar y volver a cargar las claves desde KeePassXC (memoria 6.2)
+- [x] [R5] probar restore de un router con config de F2/F3: fijar placas por MAC, quitar del `.rsc` las líneas `name=` de `/interface ethernet`, importar y volver a cargar las claves desde KeePassXC (memoria 6.2) — CORE-2: el import se cortó en el template OSPF sin clave; se completó a mano y se actualizó el procedimiento
 
 ---
 
 ## Epic F5 — Memoria + defensa · *vence vie 23/10*
 
 ### Memoria (plantilla completa)
-- [ ] [R1..R5] cada rol completa sus secciones de configuración (3.x) y seguridad (5)
-- [ ] [R5] completa gestión operativa (6), capturas (7) y conclusiones (8)
+- [x] [R1..R5] cada rol completa sus secciones de configuración (3.x) y seguridad (5)
+- [x] [R5] completa gestión operativa (6), capturas (7) y conclusiones (8)
 
 ### Backlog cerrado (todo en "hecho")
-- [ ] [R5] revisar que cada tarea cumple su criterio de aceptación; cerrar
+- [x] [R5] revisar que cada tarea cumple su criterio de aceptación; cerrar — queda abierta, con su motivo, la prueba de `virtio-net-pci`; la instalación de GNS3 en cada laptop se descartó
 
 ### Defensa oral (parte propia + ajena)
-- [ ] [R1..R5] asignar a cada integrante una parte ajena para defender y ensayar
+- [x] [R1..R5] asignar a cada integrante una parte ajena para defender y ensayar
+
+| Integrante | Parte propia | Parte ajena |
+|---|---|---|
+| Santiago (R1) | EDGE: BGP, redistribución, firewall | ISP y drill 3 (lo dirigió en la rotación) |
+| Tomás (R2+R3) | ISP (BGP, default-originate, destino de prueba) y CORE (OSPF, core–core, MD5) | EDGE: check-gateway (drill 4) y firewall |
+| Juan Bautista (R4) | DIST: VRRP, load-sharing, OSPF de los DIST | CORE: drill 2 y reconvergencia OSPF |
+| Lautaro (R5) | Operación: change log, backups, restore, monitoreo, runbooks | VRRP y los drills 1 y 5 |
